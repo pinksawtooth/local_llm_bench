@@ -1,0 +1,14 @@
+id: d-compile
+title: d-compile
+description: Ghidra Docker で d-compile を解析する単問ベンチマーク
+questions:
+  - id: d-compile
+    prompt: d-compileを解析し、CTFのフラグを取得してください。得られたフラグ文字列だけをそのまま出力してください。
+    answer_type: exact
+    binary_path: data/d-compile
+    category: rev
+    difficulty: medium
+    tags:
+      - ghidra
+      - ctf
+      - dlang
