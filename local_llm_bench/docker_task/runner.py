@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import inspect
 import json
 import os
@@ -52,15 +53,18 @@ def _resolve_local_ghidra_mcp_source_root() -> Optional[Path]:
             if normalized is not None:
                 return normalized
 
-    try:
-        import ghidra_mcp.presentation.cli as ghidra_cli
-    except Exception:
-        return None
-
-    source_file = inspect.getsourcefile(ghidra_cli)
-    if not source_file:
-        return None
-    return _normalize_ghidra_mcp_source_root(Path(source_file).resolve().parents[2])
+    for module_name in ("ghidra_mcp.presentation.cli", "ghidra_mcp.cli"):
+        try:
+            ghidra_cli = importlib.import_module(module_name)
+        except Exception:
+            continue
+        source_file = inspect.getsourcefile(ghidra_cli)
+        if not source_file:
+            continue
+        normalized = _normalize_ghidra_mcp_source_root(Path(source_file).resolve().parents[2])
+        if normalized is not None:
+            return normalized
+    return None
 
 
 def _docker_binary() -> str:
@@ -134,13 +138,10 @@ def _docker_platform_mismatch_error(image: str, requested_platform: str | None) 
     return message + " docker.platform をローカル image と合わせるか、指定 platform で image を再ビルドしてください。"
 
 
-def _stage_docker_ghidra_mcp_source(bootstrap_dir: Path) -> Path:
+def _maybe_stage_docker_ghidra_mcp_source(bootstrap_dir: Path) -> Optional[Path]:
     source_root = _resolve_local_ghidra_mcp_source_root()
     if source_root is None:
-        raise RuntimeError(
-            "ghidra_mcp source root を解決できませんでした。"
-            f" {_DOCKER_GHIDRA_MCP_SOURCE_PATH_ENV} を設定してください。"
-        )
+        return None
     destination_root = bootstrap_dir / "ghidra_mcp_src"
     shutil.copytree(source_root, destination_root, dirs_exist_ok=True)
     return destination_root
@@ -279,10 +280,11 @@ def _run_question_in_docker(
 
         env = os.environ.copy()
         if _should_stage_ghidra_source(question):
-            staged_source_root = _stage_docker_ghidra_mcp_source(bootstrap_dir)
-            env[_DOCKER_GHIDRA_MCP_SOURCE_ENV] = "/work/.local_llm_bench_bootstrap/ghidra_mcp_src"
-            if not staged_source_root.exists():
-                raise RuntimeError("ghidra_mcp source staging に失敗しました。")
+            staged_source_root = _maybe_stage_docker_ghidra_mcp_source(bootstrap_dir)
+            if staged_source_root is not None:
+                # Prefer a locally checked-out ghidra_mcp when available, but the
+                # Docker image now carries its own pinned mecha_ghidra install.
+                env[_DOCKER_GHIDRA_MCP_SOURCE_ENV] = "/work/.local_llm_bench_bootstrap/ghidra_mcp_src"
 
         cmd = [
             _docker_binary(),

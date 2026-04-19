@@ -276,6 +276,92 @@ class DockerTaskTests(unittest.TestCase):
 
         self.assertIn(f"{_REPO_ROOT}:/opt/local_llm_bench:ro", seen_cmd)
 
+    def test_run_docker_task_benchmark_uses_image_bundled_ghidra_mcp_when_local_source_is_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            binary_path = root / "d-compile"
+            binary_path.write_bytes(b"\x7fELFdemo")
+            spec_path = root / "spec.yaml"
+            spec_path.write_text(
+                textwrap.dedent(
+                    """
+                    id: d-compile
+                    title: d-compile
+                    questions:
+                      - id: q1
+                        prompt: question
+                        answer_type: exact
+                        binary_path: d-compile
+                    """
+                ),
+                encoding="utf-8",
+            )
+            answers_path = root / "spec.answers.yaml"
+            answers_path.write_text("answers:\n  q1: flag{correct}\n", encoding="utf-8")
+            config = BenchmarkConfig(
+                api_base="http://localhost:1234/v1",
+                models=["bench-model"],
+                prompt_text="",
+                request=RequestSettings(temperature=0.0, max_tokens=128),
+                runs=RunSettings(cold_runs=1, warm_runs=0, timeout_sec=10.0, cooldown_sec=0.0),
+                output=OutputSettings(
+                    history_json=root / "runs" / "history.json",
+                    latest_json=root / "runs" / "latest_run.json",
+                    report_html=root / "docs" / "index.html",
+                    run_logs_dir=root / "runs" / "logs",
+                ),
+                mode="docker_task",
+                benchmark_spec_path=spec_path,
+                benchmark_answer_key_path=answers_path,
+                docker_image="local-llm-bench:bench",
+            )
+
+            seen_cmd: list[str] = []
+
+            def fake_executor(*args, **kwargs):
+                nonlocal seen_cmd
+                seen_cmd = list(args[0])
+                return subprocess.CompletedProcess(
+                    args[0],
+                    0,
+                    stdout=json.dumps(
+                        {
+                            "status": "success",
+                            "predicted_answer": "flag{correct}",
+                            "response_text": "FINAL_ANSWER: flag{correct}",
+                            "reasoning_text": "",
+                            "finish_reason": "stop",
+                            "ttft_ms": 100.0,
+                            "total_latency_ms": 500.0,
+                            "completion_window_ms": 400.0,
+                            "prompt_tokens": 10,
+                            "completion_tokens": 20,
+                            "total_tokens": 30,
+                            "decode_tps": 50.0,
+                            "end_to_end_tps": 40.0,
+                            "approx_prompt_tps": 100.0,
+                        },
+                        ensure_ascii=False,
+                    ),
+                    stderr="",
+                )
+
+            from unittest.mock import patch
+
+            with patch("local_llm_bench.docker_task.runner._should_stage_ghidra_source", return_value=True), patch(
+                "local_llm_bench.docker_task.runner._resolve_local_ghidra_mcp_source_root",
+                return_value=None,
+            ):
+                run_data = run_docker_task_benchmark(
+                    config,
+                    docker_executor=fake_executor,
+                    now_fn=lambda: 1.0,
+                    sleep_fn=lambda _: None,
+                )
+
+        self.assertEqual(run_data["records"][0]["status"], "success")
+        self.assertIn("LOCAL_LLM_BENCH_DOCKER_GHIDRA_MCP_SOURCE_ROOT=", " ".join(seen_cmd))
+
     def test_run_docker_task_benchmark_reports_platform_mismatch_before_launch(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)

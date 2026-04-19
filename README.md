@@ -66,6 +66,17 @@ python /Users/samsepi0l/local_llm_bench/benchmark.py \
 
 `provider=unsloth_studio` では `api_base` と `docker.api_base` の override は受け付けません。docker_task ではコンテナ側から host の Studio に到達するため、内部で `host.docker.internal` 側の URL を使います。
 
+## Docker Task ベンチ
+
+`bench_d_compile_arm64.yaml` のような `mode: docker_task` 設定を使う場合は、先に Docker イメージを build してください。
+
+```bash
+./build_bench_image.sh --platform linux/arm64
+python benchmark.py --config bench_d_compile_arm64.yaml
+```
+
+この build では Ghidra 本体に加えて、`mecha_ghidra` (`ghidra_mcp`) も GitHub から取得して image に同梱します。clone 後に host 側へ `ghidra_mcp` を別インストールしなくても、そのまま `docker_task` ベンチを実行できます。手元の `ghidra_mcp` checkout を優先して試したい場合だけ、`LOCAL_LLM_BENCH_DOCKER_GHIDRA_MCP_SOURCE_PATH` か `REV_BENCH_DOCKER_GHIDRA_MCP_SOURCE_PATH` を設定してください。
+
 ## 生成物
 
 - `runs/history.json`: 実行履歴

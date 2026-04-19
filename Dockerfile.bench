@@ -4,6 +4,8 @@ ARG DEBIAN_FRONTEND=noninteractive
 ARG TARGETPLATFORM
 ARG GHIDRA_URL
 ARG GHIDRA_SHA256
+ARG GHIDRA_MCP_REPO_URL=https://github.com/ghidra-user-jp/mecha_ghidra.git
+ARG GHIDRA_MCP_REF=v0.1.0-rc.1
 
 ENV GHIDRA_INSTALL_DIR=/opt/ghidra \
     JAVA_HOME=/opt/java/openjdk \
@@ -36,6 +38,12 @@ WORKDIR /opt/local_llm_bench
 COPY requirements.txt /opt/local_llm_bench/requirements.txt
 RUN pip install --upgrade pip \
     && pip install -r /opt/local_llm_bench/requirements.txt
+
+RUN test -n "${GHIDRA_MCP_REPO_URL}" \
+    && test -n "${GHIDRA_MCP_REF}" \
+    && git clone --depth 1 --branch "${GHIDRA_MCP_REF}" "${GHIDRA_MCP_REPO_URL}" /tmp/mecha_ghidra \
+    && pip install /tmp/mecha_ghidra \
+    && rm -rf /tmp/mecha_ghidra
 
 COPY . /opt/local_llm_bench
 
