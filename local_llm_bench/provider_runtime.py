@@ -17,7 +17,9 @@ from .lmstudio_cli import (
     _build_quantization_fields,
     _matching_entries,
     describe_loaded_model,
+    load_model_with_config,
     unload_matching_models,
+    unload_matching_models_via_api,
 )
 from .unsloth_api import UnslothStudioAuthSession
 
@@ -448,7 +450,12 @@ def _prefer_unsloth_available_entry(
 
 
 class ProviderRuntime:
-    def prepare_model(self, requested_model: str) -> tuple[str, Optional[dict[str, Any]]]:
+    def prepare_model(
+        self,
+        requested_model: str,
+        *,
+        lmstudio_parallelism: int | None = None,
+    ) -> tuple[str, Optional[dict[str, Any]]]:
         raise NotImplementedError
 
     def describe_model(self, requested_model: str) -> Optional[dict[str, Any]]:
@@ -468,8 +475,48 @@ class ProviderRuntime:
 class LMStudioProviderRuntime(ProviderRuntime):
     config: BenchmarkConfig
 
-    def prepare_model(self, requested_model: str) -> tuple[str, Optional[dict[str, Any]]]:
+    def prepare_model(
+        self,
+        requested_model: str,
+        *,
+        lmstudio_parallelism: int | None = None,
+    ) -> tuple[str, Optional[dict[str, Any]]]:
+        load_settings = self.config.lmstudio_load
+        requested_parallelism = (
+            lmstudio_parallelism
+            if lmstudio_parallelism is not None
+            else load_settings.parallelism
+        )
+        load_response: dict[str, Any] | None = None
+        if load_settings.has_load_overrides() or requested_parallelism is not None:
+            unload_matching_models_via_api(
+                requested_model,
+                api_base=self.config.api_base,
+                timeout_sec=60.0,
+            )
+            load_response = load_model_with_config(
+                requested_model,
+                api_base=self.config.api_base,
+                parallelism=requested_parallelism,
+                context_length=load_settings.context_length,
+                eval_batch_size=load_settings.eval_batch_size,
+                flash_attention=load_settings.flash_attention,
+                num_experts=load_settings.num_experts,
+                offload_kv_cache_to_gpu=load_settings.offload_kv_cache_to_gpu,
+                timeout_sec=_MODEL_PREPARE_TIMEOUT_SEC,
+            )
+
         model_info = describe_loaded_model(requested_model, api_base=self.config.api_base)
+        if load_response is not None:
+            if model_info is None:
+                model_info = {}
+            instance_id = _first_text(load_response.get("instance_id"))
+            if instance_id and not _first_text(model_info.get("identifier")):
+                model_info["identifier"] = instance_id
+            if isinstance(load_response.get("load_config"), dict):
+                model_info["load_config"] = load_response["load_config"]
+            if requested_parallelism is not None:
+                model_info["lmstudio_parallelism"] = requested_parallelism
         api_model = requested_model
         if model_info:
             api_model = _first_text(
@@ -485,6 +532,13 @@ class LMStudioProviderRuntime(ProviderRuntime):
         return describe_loaded_model(requested_model, api_base=self.config.api_base)
 
     def unload_model(self, requested_model: str) -> list[UnloadResult]:
+        api_results = unload_matching_models_via_api(
+            requested_model,
+            api_base=self.config.api_base,
+            timeout_sec=60.0,
+        )
+        if api_results:
+            return api_results
         return unload_matching_models(requested_model)
 
     def chat_client(self) -> Callable[..., Any]:
@@ -511,7 +565,12 @@ class UnslothStudioProviderRuntime(ProviderRuntime):
             return _prefer_unsloth_available_entry(requested_model, entries=entries, matches=matches)
         raise RuntimeError(f"Unsloth Studio で model '{requested_model}' が /api/models/local に見つかりません。")
 
-    def prepare_model(self, requested_model: str) -> tuple[str, Optional[dict[str, Any]]]:
+    def prepare_model(
+        self,
+        requested_model: str,
+        *,
+        lmstudio_parallelism: int | None = None,
+    ) -> tuple[str, Optional[dict[str, Any]]]:
         timeout_sec = max(float(self.config.runs.timeout_sec), _MODEL_PREPARE_TIMEOUT_SEC)
         entry = self._match_available_entry(requested_model, timeout_sec=timeout_sec)
         load_target = _first_text(

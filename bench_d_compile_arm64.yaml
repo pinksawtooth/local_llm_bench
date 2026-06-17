@@ -12,6 +12,9 @@ benchmark:
   question_timeout_sec: 600
   ghidra_tool_mode: unrestricted
 
+lmstudio:
+  parallelism_sweep: [2, 3, 4]
+
 docker:
   image: "local-llm-bench:bench"
   platform: "linux/arm64"

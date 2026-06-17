@@ -5,10 +5,100 @@ import subprocess
 import unittest
 from unittest.mock import patch
 
-from local_llm_bench.lmstudio_cli import describe_loaded_model, unload_matching_models
+from local_llm_bench.lmstudio_cli import (
+    describe_loaded_model,
+    load_model_with_config,
+    unload_matching_models,
+    unload_matching_models_via_api,
+)
+
+
+class _FakeHTTPResponse:
+    def __init__(self, payload: dict[str, object]) -> None:
+        self.payload = payload
+
+    def __enter__(self) -> "_FakeHTTPResponse":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        return False
+
+    def read(self) -> bytes:
+        return json.dumps(self.payload).encode("utf-8")
 
 
 class LMStudioCLITests(unittest.TestCase):
+    def test_load_model_with_config_sends_parallel_as_load_parameter(self) -> None:
+        requests: list[tuple[str, dict[str, object]]] = []
+
+        def fake_urlopen(request, timeout=None):
+            payload = json.loads(request.data.decode("utf-8"))
+            requests.append((request.full_url, payload))
+            return _FakeHTTPResponse(
+                {
+                    "type": "llm",
+                    "instance_id": "bench-model",
+                    "status": "loaded",
+                    "load_config": {"parallel": 3},
+                }
+            )
+
+        response = load_model_with_config(
+            "bench-model",
+            api_base="http://localhost:1234/v1",
+            parallelism=3,
+            context_length=4096,
+            flash_attention=True,
+            urlopen=fake_urlopen,
+        )
+
+        self.assertEqual(response["instance_id"], "bench-model")
+        self.assertEqual(requests[0][0], "http://localhost:1234/api/v1/models/load")
+        self.assertEqual(
+            requests[0][1],
+            {
+                "model": "bench-model",
+                "echo_load_config": True,
+                "parallel": 3,
+                "context_length": 4096,
+                "flash_attention": True,
+            },
+        )
+
+    def test_unload_matching_models_via_api_unloads_loaded_instance(self) -> None:
+        calls: list[tuple[str, dict[str, object] | None]] = []
+
+        def fake_urlopen(request, timeout=None):
+            payload = json.loads(request.data.decode("utf-8")) if request.data else None
+            calls.append((request.full_url, payload))
+            if request.full_url.endswith("/api/v1/models"):
+                return _FakeHTTPResponse(
+                    {
+                        "models": [
+                            {
+                                "key": "bench-model",
+                                "display_name": "Bench Model",
+                                "loaded_instances": [
+                                    {"id": "bench-model-instance", "config": {"parallel": 2}}
+                                ],
+                            }
+                        ]
+                    }
+                )
+            if request.full_url.endswith("/api/v1/models/unload"):
+                return _FakeHTTPResponse({"instance_id": payload["instance_id"]})
+            raise AssertionError(f"unexpected url: {request.full_url}")
+
+        results = unload_matching_models_via_api(
+            "bench-model",
+            api_base="http://localhost:1234/v1",
+            urlopen=fake_urlopen,
+        )
+
+        self.assertEqual(results[0].status, "unloaded")
+        self.assertEqual(results[0].target, "bench-model-instance")
+        self.assertEqual(calls[-1][1], {"instance_id": "bench-model-instance"})
+
     def test_describe_loaded_model_reads_format_and_quantization(self) -> None:
         def fake_run(args, **kwargs):
             self.assertEqual(args, ["lms", "ps", "--json"])

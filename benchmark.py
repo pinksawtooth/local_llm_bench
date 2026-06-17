@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from local_llm_bench.config import DEFAULT_CONFIG_PATH, DOCKER_TASK_MODE, load_config
+from local_llm_bench.config import DEFAULT_CONFIG_PATH, DOCKER_TASK_MODE, LMSTUDIO_PROVIDER, load_config
 from local_llm_bench.docker_task.runner import run_docker_task_benchmark
 from local_llm_bench.history import update_history, write_latest
 from local_llm_bench.provider_runtime import build_provider_runtime
@@ -22,6 +22,33 @@ def _resolved_target(model: str, model_info: dict[str, object] | None) -> str:
     return model
 
 
+def _lmstudio_parallelism_values(config) -> list[int | None]:
+    if config.provider != LMSTUDIO_PROVIDER:
+        return [None]
+    if config.lmstudio_load.parallelism_sweep:
+        return list(config.lmstudio_load.parallelism_sweep)
+    if config.lmstudio_load.parallelism is not None:
+        return [config.lmstudio_load.parallelism]
+    return [None]
+
+
+def _with_lmstudio_parallelism_metadata(run_data: dict[str, object], parallelism: int | None) -> dict[str, object]:
+    if parallelism is None:
+        return run_data
+    run_data["lmstudio_parallelism"] = parallelism
+    lmstudio = run_data.get("lmstudio")
+    if not isinstance(lmstudio, dict):
+        lmstudio = {}
+        run_data["lmstudio"] = lmstudio
+    lmstudio["parallelism"] = parallelism
+    model_info = run_data.get("model_info")
+    if isinstance(model_info, dict):
+        load_config = model_info.get("load_config")
+        if isinstance(load_config, dict):
+            lmstudio["load_config"] = load_config
+    return run_data
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="ローカルLLM性能を比較し、HTMLダッシュボードを生成します。"
@@ -33,6 +60,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--cold-runs", type=int, help="coldフェーズの反復回数")
     parser.add_argument("--warm-runs", type=int, help="warmフェーズの反復回数")
     parser.add_argument("--timeout-sec", type=float, help="各リクエストのタイムアウト秒")
+    parser.add_argument("--parallelism", type=int, help="LM Studio の Max Concurrent Predictions")
+    parser.add_argument("--parallelism-sweep", help="LM Studio parallelism をカンマ区切りで複数指定（例: 2,3,4）")
     parser.add_argument("--max-tokens", type=int, help="max_tokens")
     parser.add_argument("--temperature", type=float, help="temperature")
     parser.add_argument("--out-dir", type=Path, help="出力先ディレクトリ。指定時は JSON/HTML をここに集約")
@@ -60,6 +89,8 @@ def main(argv: list[str] | None = None) -> int:
         cli_cold_runs=args.cold_runs,
         cli_warm_runs=args.warm_runs,
         cli_timeout_sec=args.timeout_sec,
+        cli_parallelism=args.parallelism,
+        cli_parallelism_sweep=args.parallelism_sweep,
         cli_max_tokens=args.max_tokens,
         cli_temperature=args.temperature,
         cli_out_dir=args.out_dir,
@@ -67,51 +98,57 @@ def main(argv: list[str] | None = None) -> int:
     runtime = build_provider_runtime(config)
 
     produced_runs = []
+    parallelism_values = _lmstudio_parallelism_values(config)
     for model in config.models:
-        run_data = None
-        requested_model = model
-        model_info = None
-        api_model = requested_model
-        model_prepared = False
-        try:
-            api_model, model_info = runtime.prepare_model(requested_model)
-            model_prepared = True
-            if config.mode == DOCKER_TASK_MODE:
-                run_data = run_docker_task_benchmark(
-                    config,
-                    model=api_model,
-                    requested_model=requested_model,
-                    docker_env=runtime.docker_environment(),
+        for lmstudio_parallelism in parallelism_values:
+            run_data = None
+            requested_model = model
+            model_info = None
+            api_model = requested_model
+            model_prepared = False
+            try:
+                api_model, model_info = runtime.prepare_model(
+                    requested_model,
+                    lmstudio_parallelism=lmstudio_parallelism,
                 )
-            else:
-                run_data = run_benchmark(
-                    config,
-                    model=api_model,
-                    requested_model=requested_model,
-                    client=runtime.chat_client(),
-                )
-            if not model_info:
-                model_info = runtime.describe_model(api_model)
-            if model_info:
-                run_data["model_info"] = model_info
-                api_model = _resolved_target(api_model, model_info)
-            run_data["api_model"] = api_model
-            run_data = persist_run_logs(config.output, run_data)
-            update_history(config.output.history_json, run_data)
-            write_latest(config.output.latest_json, run_data)
-            produced_runs.append(run_data)
-        finally:
-            if model_prepared and not args.keep_loaded:
-                unload_results = runtime.unload_model(api_model)
-                for unload_result in unload_results:
-                    prefix = "[Unload]"
-                    if unload_result.status == "unloaded":
-                        print(f"{prefix} {unload_result.target}: {unload_result.message}")
-                    else:
-                        print(
-                            f"{prefix} {unload_result.target}: {unload_result.status}: "
-                            f"{unload_result.message}"
-                        )
+                model_prepared = True
+                if config.mode == DOCKER_TASK_MODE:
+                    run_data = run_docker_task_benchmark(
+                        config,
+                        model=api_model,
+                        requested_model=requested_model,
+                        docker_env=runtime.docker_environment(),
+                    )
+                else:
+                    run_data = run_benchmark(
+                        config,
+                        model=api_model,
+                        requested_model=requested_model,
+                        client=runtime.chat_client(),
+                    )
+                if not model_info:
+                    model_info = runtime.describe_model(api_model)
+                if model_info:
+                    run_data["model_info"] = model_info
+                    api_model = _resolved_target(api_model, model_info)
+                run_data["api_model"] = api_model
+                run_data = _with_lmstudio_parallelism_metadata(run_data, lmstudio_parallelism)
+                run_data = persist_run_logs(config.output, run_data)
+                update_history(config.output.history_json, run_data)
+                write_latest(config.output.latest_json, run_data)
+                produced_runs.append(run_data)
+            finally:
+                if model_prepared and not args.keep_loaded:
+                    unload_results = runtime.unload_model(api_model)
+                    for unload_result in unload_results:
+                        prefix = "[Unload]"
+                        if unload_result.status == "unloaded":
+                            print(f"{prefix} {unload_result.target}: {unload_result.message}")
+                        else:
+                            print(
+                                f"{prefix} {unload_result.target}: {unload_result.status}: "
+                                f"{unload_result.message}"
+                            )
 
     report_updated = ensure_report_html(
         config.output.report_html,
@@ -135,11 +172,23 @@ def main(argv: list[str] | None = None) -> int:
         latency = row.get("warm_mean_total_latency_ms")
         ttft = row.get("warm_mean_ttft_ms")
         decode = row.get("warm_mean_decode_tps")
+        duration = run_data.get("duration_sec")
+        lmstudio_parallelism = run_data.get("lmstudio_parallelism")
         print(
             f"- {display_name} [{format_label} / {quantization_label}] ({row['model']}): "
+            f"lmstudio_parallelism={lmstudio_parallelism} "
+            if isinstance(lmstudio_parallelism, int)
+            else f"- {display_name} [{format_label} / {quantization_label}] ({row['model']}): ",
+            end="",
+        )
+        print(
+            f"duration={duration:.1f}s " if isinstance(duration, (int, float)) else "duration=N/A ",
+            end="",
+        )
+        print(
             f"warm_latency={latency:.1f}ms "
             if isinstance(latency, (int, float))
-            else f"- {display_name} [{format_label} / {quantization_label}] ({row['model']}): warm_latency=N/A ",
+            else "warm_latency=N/A ",
             end="",
         )
         print(

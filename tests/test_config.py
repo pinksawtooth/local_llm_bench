@@ -28,6 +28,11 @@ class ConfigTests(unittest.TestCase):
                     request:
                       temperature: 0.1
                       max_tokens: 128
+                    lmstudio:
+                      parallelism: 2
+                      parallelism_sweep: [2, 3, 4]
+                      context_length: 4096
+                      flash_attention: true
                     runs:
                       cold_runs: 1
                       warm_runs: 2
@@ -44,6 +49,10 @@ class ConfigTests(unittest.TestCase):
 
         self.assertEqual(loaded.models, ["model-a"])
         self.assertEqual(loaded.prompt_text, "hello")
+        self.assertEqual(loaded.lmstudio_load.parallelism, 2)
+        self.assertEqual(loaded.lmstudio_load.parallelism_sweep, [2, 3, 4])
+        self.assertEqual(loaded.lmstudio_load.context_length, 4096)
+        self.assertTrue(loaded.lmstudio_load.flash_attention)
         self.assertEqual(loaded.output.history_json.name, "history.json")
         self.assertTrue(str(loaded.output.report_html).endswith("docs/index.html"))
         self.assertTrue(str(loaded.output.run_logs_dir).endswith("runs/logs"))
@@ -78,6 +87,31 @@ class ConfigTests(unittest.TestCase):
             loaded = load_config(config_path, cli_prompt_text="new prompt")
 
         self.assertEqual(loaded.prompt_text, "new prompt")
+
+    def test_cli_parallelism_sweep_overrides_lmstudio_config(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            config_path = root / "bench.yaml"
+            config_path.write_text(
+                textwrap.dedent(
+                    """
+                    api_base: "http://localhost:1234/v1"
+                    models: ["model-a"]
+                    lmstudio:
+                      parallelism: 1
+                      parallelism_sweep: [1]
+                    """
+                ),
+                encoding="utf-8",
+            )
+            loaded = load_config(
+                config_path,
+                cli_parallelism=4,
+                cli_parallelism_sweep="2,3,4",
+            )
+
+        self.assertEqual(loaded.lmstudio_load.parallelism, 4)
+        self.assertEqual(loaded.lmstudio_load.parallelism_sweep, [2, 3, 4])
 
     def test_load_config_supports_docker_task_mode(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

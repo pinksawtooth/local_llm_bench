@@ -1689,6 +1689,7 @@ def render_report_html(history_url: str) -> str:
 
       const promptCandidates = [normalized.prompt_text, ...records.map((record) => record.prompt_text)];
       const promptText = firstText(promptCandidates);
+      const runLmStudioParallelism = normalized.lmstudio_parallelism ?? normalized.lmstudio?.parallelism ?? null;
 
       const enrichedRecords = records.map((record) => {
         const benchmarkMode = record.benchmark_mode || normalized.benchmark_mode || "prompt";
@@ -1709,6 +1710,7 @@ def render_report_html(history_url: str) -> str:
           benchmark_id: record.benchmark_id || normalized.benchmark_id || "",
           benchmark_title: record.benchmark_title || normalized.benchmark_title || normalized.benchmark_id || "",
           question_count: record.question_count ?? normalized.question_count ?? questionResults.length ?? null,
+          lmstudio_parallelism: record.lmstudio_parallelism ?? runLmStudioParallelism,
           model_info: normalizeModelInfo(record.model_info || normalized.model_info, record.model || model),
           benchmark_mode: benchmarkMode,
           question_results: questionResults,
@@ -1717,6 +1719,7 @@ def render_report_html(history_url: str) -> str:
 
       normalized.model = model;
       normalized.prompt_text = promptText;
+      if (runLmStudioParallelism != null) normalized.lmstudio_parallelism = runLmStudioParallelism;
       normalized.model_info = normalizeModelInfo(normalized.model_info, model);
       normalized.records = enrichedRecords;
       delete normalized.models;
@@ -1954,7 +1957,7 @@ def render_report_html(history_url: str) -> str:
       for (const run of historyRuns) {
         if (run.prompt_text) prompts.push(run.prompt_text);
         const runModelInfo = normalizeModelInfo(run.model_info, run.model);
-        const runComparisonModel = comparisonModelKey(run.model, runModelInfo);
+        const runComparisonModel = comparisonModelKey(run.model, runModelInfo, run.lmstudio_parallelism);
         if (runComparisonModel && runModelInfo) {
           modelCatalog[runComparisonModel] = runModelInfo;
         }
@@ -1965,12 +1968,13 @@ def render_report_html(history_url: str) -> str:
             || null;
           records.push({
             ...record,
-            comparison_model: comparisonModelKey(record.model || run.model, recordModelInfo),
+            comparison_model: comparisonModelKey(record.model || run.model, recordModelInfo, record.lmstudio_parallelism ?? run.lmstudio_parallelism),
             model_info: recordModelInfo,
             benchmark_mode: record.benchmark_mode || run.benchmark_mode || null,
             benchmark_id: record.benchmark_id || run.benchmark_id || null,
             benchmark_title: record.benchmark_title || run.benchmark_title || null,
             question_count: record.question_count || run.question_count || null,
+            lmstudio_parallelism: record.lmstudio_parallelism ?? run.lmstudio_parallelism ?? null,
           });
         }
       }
@@ -2282,7 +2286,13 @@ def render_report_html(history_url: str) -> str:
         }).sort((left, right) => right.events - left.events || String(left.model).localeCompare(String(right.model)));
       }
 
-    function comparisonModelKey(model, modelInfo) {
+    function withParallelismSuffix(label, lmstudioParallelism) {
+      const numeric = Number(lmstudioParallelism);
+      if (!Number.isInteger(numeric) || numeric < 1) return label;
+      return `${label} p=${numeric}`;
+    }
+
+    function comparisonModelKey(model, modelInfo, lmstudioParallelism = null) {
       const requestedModel = modelInfo?.requested_model || model || "(unknown)";
       const quantizationName = firstText([
         modelInfo?.quantization_name,
@@ -2295,7 +2305,7 @@ def render_report_html(history_url: str) -> str:
         const variantSuffix = selectedVariant.split("@")[1] || "";
         const variantStem = variantSuffix.split("-")[0] || "";
         if (variantStem) {
-          return `${requestedModel}-${variantStem}`;
+          return withParallelismSuffix(`${requestedModel}-${variantStem}`, lmstudioParallelism);
         }
       }
       if (quantizationName) {
@@ -2305,12 +2315,12 @@ def render_report_html(history_url: str) -> str:
           || requestedLower.endsWith(`-${normalizedVariant}`)
           || requestedLower.includes(`.${normalizedVariant}`);
         if (alreadySpecific) {
-          return requestedModel;
+          return withParallelismSuffix(requestedModel, lmstudioParallelism);
         }
-        return `${requestedModel}-${normalizedVariant}`;
+        return withParallelismSuffix(`${requestedModel}-${normalizedVariant}`, lmstudioParallelism);
       }
       if (modelInfo?.identifier && modelInfo.identifier !== requestedModel && !looksLikeFileSystemPath(modelInfo.identifier)) {
-        return modelInfo.identifier;
+        return withParallelismSuffix(modelInfo.identifier, lmstudioParallelism);
       }
       const format = modelFormat(modelInfo).toLowerCase();
       if (format) {
@@ -2319,11 +2329,11 @@ def render_report_html(history_url: str) -> str:
           || requestedLower.endsWith(`-${format}`)
           || requestedLower.includes(`.${format}`);
         if (alreadySpecific) {
-          return requestedModel;
+          return withParallelismSuffix(requestedModel, lmstudioParallelism);
         }
-        return `${requestedModel}-${format}`;
+        return withParallelismSuffix(`${requestedModel}-${format}`, lmstudioParallelism);
       }
-      return requestedModel;
+      return withParallelismSuffix(requestedModel, lmstudioParallelism);
     }
 
     function modelInfoFor(model) {
@@ -3126,6 +3136,7 @@ def render_report_html(history_url: str) -> str:
           record.run_id,
           record.model,
           record.comparison_model,
+          record.lmstudio_parallelism,
           record.prompt_text,
           modelDisplayName(record.model, recordModelInfo),
           modelFormat(recordModelInfo),
@@ -3209,6 +3220,7 @@ def render_report_html(history_url: str) -> str:
           ["LM Studio Model", escapeHtml(modelDisplayName(record.model, recordModelInfo))],
           ["Benchmark ID", escapeHtml(record.benchmark_id || "-")],
           ["Benchmark Title", escapeHtml(record.benchmark_title || "-")],
+          ["LM Studio Parallelism", escapeHtml(record.lmstudio_parallelism != null ? String(record.lmstudio_parallelism) : "-")],
           ["Started", formatTime(record.run_started_at || record.started_at)],
           ["Format", escapeHtml(modelFormat(recordModelInfo) || "-")],
           ["Quantization", escapeHtml(modelQuantization(recordModelInfo) || "-")],

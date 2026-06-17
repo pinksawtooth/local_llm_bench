@@ -692,6 +692,10 @@ def normalize_run_entry(run_data: Dict[str, Any], history_dir: Path | None = Non
     prompt_candidates: list[Any] = [normalized.get("prompt_text")]
     prompt_candidates.extend(record.get("prompt_text") for record in records)
     prompt_text = _first_text(prompt_candidates)
+    lmstudio = normalized.get("lmstudio")
+    run_lmstudio_parallelism = normalized.get("lmstudio_parallelism")
+    if run_lmstudio_parallelism is None and isinstance(lmstudio, dict):
+        run_lmstudio_parallelism = lmstudio.get("parallelism")
 
     enriched_records: list[Dict[str, Any]] = []
     for record in records:
@@ -704,6 +708,8 @@ def normalize_run_entry(run_data: Dict[str, Any], history_dir: Path | None = Non
         enriched.setdefault("benchmark_id", normalized.get("benchmark_id"))
         enriched.setdefault("benchmark_title", normalized.get("benchmark_title") or normalized.get("benchmark_id"))
         enriched.setdefault("question_count", normalized.get("question_count"))
+        if run_lmstudio_parallelism is not None:
+            enriched.setdefault("lmstudio_parallelism", run_lmstudio_parallelism)
         annotate_error_info(enriched)
         raw_question_results = enriched.get("question_results")
         if isinstance(raw_question_results, list):
@@ -737,6 +743,8 @@ def normalize_run_entry(run_data: Dict[str, Any], history_dir: Path | None = Non
 
     normalized["model"] = model
     normalized["prompt_text"] = prompt_text
+    if run_lmstudio_parallelism is not None:
+        normalized["lmstudio_parallelism"] = run_lmstudio_parallelism
     normalized["records"] = enriched_records
     normalized.pop("models", None)
     normalized.pop("config", None)
@@ -763,6 +771,8 @@ def compact_run_entry(run_data: Dict[str, Any]) -> Dict[str, Any]:
             reduced.pop("run_id", None)
         if reduced.get("run_started_at") == normalized.get("started_at"):
             reduced.pop("run_started_at", None)
+        if reduced.get("lmstudio_parallelism") == normalized.get("lmstudio_parallelism"):
+            reduced.pop("lmstudio_parallelism", None)
         compact_records.append(reduced)
 
     compact["records"] = compact_records

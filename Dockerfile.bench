@@ -5,7 +5,7 @@ ARG TARGETPLATFORM
 ARG GHIDRA_URL
 ARG GHIDRA_SHA256
 ARG GHIDRA_MCP_REPO_URL=https://github.com/ghidra-user-jp/mecha_ghidra.git
-ARG GHIDRA_MCP_REF=v0.1.0-rc.1
+ARG GHIDRA_MCP_REF=v0.1.1-rc.1
 
 ENV GHIDRA_INSTALL_DIR=/opt/ghidra \
     JAVA_HOME=/opt/java/openjdk \

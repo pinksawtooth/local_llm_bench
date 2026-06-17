@@ -255,6 +255,53 @@ class BenchmarkMainTests(unittest.TestCase):
 
     @patch("benchmark.ensure_report_html", return_value=False)
     @patch("benchmark.build_provider_runtime")
+    @patch("benchmark.write_latest")
+    @patch("benchmark.update_history")
+    @patch("benchmark.run_benchmark")
+    @patch("benchmark.load_config")
+    def test_main_sweeps_lmstudio_parallelism(
+        self,
+        load_config_mock,
+        run_benchmark_mock,
+        update_history_mock,
+        write_latest_mock,
+        build_provider_runtime_mock,
+        ensure_report_html_mock,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = _make_config(Path(tmpdir))
+            config.models = ["model-a"]
+            config.lmstudio_load.parallelism_sweep = [2, 3, 4]
+            load_config_mock.return_value = config
+            run_benchmark_mock.side_effect = [
+                _run_data("model-a"),
+                _run_data("model-a"),
+                _run_data("model-a"),
+            ]
+            runtime = MagicMock()
+            runtime.prepare_model.side_effect = [
+                ("model-a", {"identifier": "model-a", "load_config": {"parallel": 2}}),
+                ("model-a", {"identifier": "model-a", "load_config": {"parallel": 3}}),
+                ("model-a", {"identifier": "model-a", "load_config": {"parallel": 4}}),
+            ]
+            runtime.unload_model.return_value = []
+            runtime.chat_client.return_value = "client-token"
+            build_provider_runtime_mock.return_value = runtime
+
+            exit_code = benchmark.main(["--config", "bench.yaml"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(
+            [call.kwargs["lmstudio_parallelism"] for call in runtime.prepare_model.call_args_list],
+            [2, 3, 4],
+        )
+        self.assertEqual([call.args[1]["lmstudio_parallelism"] for call in update_history_mock.call_args_list], [2, 3, 4])
+        self.assertEqual([call.args[1]["lmstudio"]["load_config"]["parallel"] for call in update_history_mock.call_args_list], [2, 3, 4])
+        self.assertEqual(write_latest_mock.call_count, 3)
+        ensure_report_html_mock.assert_called_once()
+
+    @patch("benchmark.ensure_report_html", return_value=False)
+    @patch("benchmark.build_provider_runtime")
     @patch("benchmark.load_config")
     def test_main_does_not_unload_when_prepare_model_fails(
         self,

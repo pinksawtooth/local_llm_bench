@@ -45,6 +45,30 @@ class RunSettings:
 
 
 @dataclass
+class LMStudioLoadSettings:
+    parallelism: Optional[int] = None
+    parallelism_sweep: list[int] = field(default_factory=list)
+    context_length: Optional[int] = None
+    eval_batch_size: Optional[int] = None
+    flash_attention: Optional[bool] = None
+    num_experts: Optional[int] = None
+    offload_kv_cache_to_gpu: Optional[bool] = None
+
+    def has_load_overrides(self) -> bool:
+        return any(
+            value is not None
+            for value in (
+                self.parallelism,
+                self.context_length,
+                self.eval_batch_size,
+                self.flash_attention,
+                self.num_experts,
+                self.offload_kv_cache_to_gpu,
+            )
+        )
+
+
+@dataclass
 class OutputSettings:
     history_json: Path
     latest_json: Path
@@ -78,6 +102,7 @@ class BenchmarkConfig:
     mode: str = DEFAULT_MODE
     provider: str = DEFAULT_PROVIDER
     auth: AuthSettings = field(default_factory=AuthSettings)
+    lmstudio_load: LMStudioLoadSettings = field(default_factory=LMStudioLoadSettings)
     benchmark_spec_path: Optional[Path] = None
     benchmark_answer_key_path: Optional[Path] = None
     benchmark_question_timeout_sec: Optional[float] = None
@@ -137,6 +162,48 @@ def _ensure_non_negative_float(value: Any, field_name: str) -> float:
     if normalized < 0:
         raise ValueError(f"{field_name} は0以上である必要があります: {normalized}")
     return normalized
+
+
+def _ensure_positive_int_list(value: Any, field_name: str) -> list[int]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        raw_items: list[Any] = [item.strip() for item in value.split(",")]
+    elif isinstance(value, (list, tuple)):
+        raw_items = list(value)
+    else:
+        raise ValueError(f"{field_name} は配列かカンマ区切り文字列である必要があります: {value!r}")
+
+    normalized_values: list[int] = []
+    for index, item in enumerate(raw_items):
+        if item is None or (isinstance(item, str) and not item.strip()):
+            continue
+        normalized = _ensure_positive_int(item, f"{field_name}[{index}]")
+        if normalized not in normalized_values:
+            normalized_values.append(normalized)
+    return normalized_values
+
+
+def _ensure_optional_positive_int(value: Any, field_name: str) -> Optional[int]:
+    if value is None:
+        return None
+    return _ensure_positive_int(value, field_name)
+
+
+def _ensure_optional_bool(value: Any, field_name: str) -> Optional[bool]:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and value in (0, 1):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+    raise ValueError(f"{field_name} は真偽値である必要があります: {value!r}")
 
 
 def _resolve_output_path(base_dir: Path, raw_value: str) -> Path:
@@ -216,6 +283,8 @@ def load_config(
     cli_cold_runs: Optional[int] = None,
     cli_warm_runs: Optional[int] = None,
     cli_timeout_sec: Optional[float] = None,
+    cli_parallelism: Optional[int] = None,
+    cli_parallelism_sweep: Any = None,
     cli_max_tokens: Optional[int] = None,
     cli_temperature: Optional[float] = None,
     cli_out_dir: Optional[Path] = None,
@@ -235,6 +304,9 @@ def load_config(
     output_block = loaded.get("output") or {}
     benchmark_block = loaded.get("benchmark") or {}
     docker_block = loaded.get("docker") or {}
+    lmstudio_block = loaded.get("lmstudio") or {}
+    if not isinstance(lmstudio_block, dict):
+        raise ValueError("lmstudio はマッピングである必要があります。")
     mode = _normalize_mode(loaded.get("mode"))
     provider = _normalize_provider(loaded.get("provider"))
     auth = _load_auth_settings(loaded.get("auth"))
@@ -290,6 +362,44 @@ def load_config(
     )
     if runs.cold_runs + runs.warm_runs < 1:
         raise ValueError("runs.cold_runs と runs.warm_runs の合計は1以上である必要があります。")
+
+    lmstudio_load = LMStudioLoadSettings(
+        parallelism=_ensure_optional_positive_int(
+            cli_parallelism
+            if cli_parallelism is not None
+            else lmstudio_block.get("parallelism", lmstudio_block.get("parallel")),
+            "lmstudio.parallelism",
+        ),
+        parallelism_sweep=_ensure_positive_int_list(
+            cli_parallelism_sweep
+            if cli_parallelism_sweep is not None
+            else lmstudio_block.get(
+                "parallelism_sweep",
+                lmstudio_block.get("parallel_sweep", lmstudio_block.get("parallelism_values")),
+            ),
+            "lmstudio.parallelism_sweep",
+        ),
+        context_length=_ensure_optional_positive_int(
+            lmstudio_block.get("context_length"),
+            "lmstudio.context_length",
+        ),
+        eval_batch_size=_ensure_optional_positive_int(
+            lmstudio_block.get("eval_batch_size"),
+            "lmstudio.eval_batch_size",
+        ),
+        flash_attention=_ensure_optional_bool(
+            lmstudio_block.get("flash_attention"),
+            "lmstudio.flash_attention",
+        ),
+        num_experts=_ensure_optional_positive_int(
+            lmstudio_block.get("num_experts"),
+            "lmstudio.num_experts",
+        ),
+        offload_kv_cache_to_gpu=_ensure_optional_bool(
+            lmstudio_block.get("offload_kv_cache_to_gpu"),
+            "lmstudio.offload_kv_cache_to_gpu",
+        ),
+    )
 
     if cli_out_dir is not None:
         out_dir = cli_out_dir.resolve()
@@ -353,6 +463,7 @@ def load_config(
         mode=mode,
         provider=provider,
         auth=auth,
+        lmstudio_load=lmstudio_load,
         benchmark_spec_path=benchmark_spec_path,
         benchmark_answer_key_path=benchmark_answer_key_path,
         benchmark_question_timeout_sec=benchmark_question_timeout_sec,

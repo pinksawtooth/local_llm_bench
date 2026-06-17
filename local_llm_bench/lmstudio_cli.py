@@ -185,6 +185,209 @@ def _normalize_api_base(api_base: str) -> str:
     return trimmed.rstrip("/")
 
 
+def _json_request(
+    *,
+    api_base: str,
+    endpoint: str,
+    payload: dict[str, Any] | None = None,
+    timeout_sec: float,
+    urlopen: Callable[..., Any] = urllib.request.urlopen,
+) -> dict[str, Any]:
+    root = _normalize_api_base(api_base)
+    if not root:
+        raise ValueError("LM Studio API base URL が空です。")
+    data = None
+    method = "GET"
+    headers = {"Accept": "application/json"}
+    if payload is not None:
+        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        method = "POST"
+        headers["Content-Type"] = "application/json"
+    request = urllib.request.Request(
+        f"{root}{endpoint}",
+        data=data,
+        headers=headers,
+        method=method,
+    )
+    try:
+        with urlopen(request, timeout=timeout_sec) as response:
+            raw = response.read().decode("utf-8")
+    except urllib.error.HTTPError as exc:
+        body = ""
+        if exc.fp is not None:
+            try:
+                body = exc.fp.read().decode("utf-8", errors="replace")
+            except OSError:
+                body = ""
+        message = body.strip() or str(exc)
+        raise RuntimeError(f"LM Studio API {endpoint} failed: HTTP {exc.code}: {message}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"LM Studio API {endpoint} failed: {exc}") from exc
+
+    if not raw.strip():
+        return {}
+    loaded = json.loads(raw)
+    if not isinstance(loaded, dict):
+        raise RuntimeError(f"LM Studio API {endpoint} のレスポンスが不正です。")
+    return loaded
+
+
+def _load_v1_model_entries(
+    *,
+    api_base: str,
+    timeout_sec: float,
+    urlopen: Callable[..., Any] = urllib.request.urlopen,
+) -> list[dict[str, Any]]:
+    try:
+        payload = _json_request(
+            api_base=api_base,
+            endpoint="/api/v1/models",
+            timeout_sec=timeout_sec,
+            urlopen=urlopen,
+        )
+    except RuntimeError:
+        return []
+    raw_entries = payload.get("models")
+    if not isinstance(raw_entries, list):
+        return []
+    return [entry for entry in raw_entries if isinstance(entry, dict)]
+
+
+def _matching_loaded_instance_ids(
+    requested_model: str,
+    *,
+    api_base: str,
+    timeout_sec: float,
+    urlopen: Callable[..., Any] = urllib.request.urlopen,
+) -> list[str]:
+    raw_entries = _load_v1_model_entries(
+        api_base=api_base,
+        timeout_sec=timeout_sec,
+        urlopen=urlopen,
+    )
+    normalized_entries: list[dict[str, Any]] = []
+    loaded_by_model_key: dict[str, list[str]] = {}
+    for entry in raw_entries:
+        model_key = _normalize_text(entry.get("key")) or _normalize_text(entry.get("id"))
+        loaded_instances = entry.get("loaded_instances")
+        instance_ids: list[str] = []
+        if isinstance(loaded_instances, list):
+            for instance in loaded_instances:
+                if not isinstance(instance, dict):
+                    continue
+                instance_id = _normalize_text(instance.get("id"))
+                if instance_id:
+                    instance_ids.append(instance_id)
+        if instance_ids:
+            loaded_by_model_key[model_key] = instance_ids
+        normalized_entries.append(
+            {
+                "identifier": instance_ids[0] if instance_ids else model_key,
+                "modelKey": model_key,
+                "displayName": _normalize_text(entry.get("display_name")) or model_key,
+                "format": _normalize_text(entry.get("format")),
+                "quantization": entry.get("quantization"),
+                "publisher": _normalize_text(entry.get("publisher")),
+                "architecture": _normalize_text(entry.get("architecture")),
+                "selectedVariant": _normalize_text(entry.get("selected_variant")),
+                "indexedModelIdentifier": model_key,
+                "path": model_key,
+            }
+        )
+
+    matches = _matching_entries(requested_model, entries=normalized_entries)
+    instance_ids: list[str] = []
+    for match in matches:
+        model_key = _normalize_text(match.get("modelKey"))
+        for instance_id in loaded_by_model_key.get(model_key, []):
+            if instance_id not in instance_ids:
+                instance_ids.append(instance_id)
+    return instance_ids
+
+
+def unload_matching_models_via_api(
+    requested_model: str,
+    *,
+    api_base: str,
+    timeout_sec: float = 60.0,
+    urlopen: Callable[..., Any] = urllib.request.urlopen,
+) -> list[UnloadResult]:
+    instance_ids = _matching_loaded_instance_ids(
+        requested_model,
+        api_base=api_base,
+        timeout_sec=timeout_sec,
+        urlopen=urlopen,
+    )
+    results: list[UnloadResult] = []
+    for instance_id in instance_ids:
+        try:
+            payload = _json_request(
+                api_base=api_base,
+                endpoint="/api/v1/models/unload",
+                payload={"instance_id": instance_id},
+                timeout_sec=timeout_sec,
+                urlopen=urlopen,
+            )
+        except RuntimeError as exc:
+            results.append(
+                UnloadResult(
+                    requested_model=requested_model,
+                    target=instance_id,
+                    status="error",
+                    message=str(exc),
+                )
+            )
+            continue
+        results.append(
+            UnloadResult(
+                requested_model=requested_model,
+                target=_normalize_text(payload.get("instance_id")) or instance_id,
+                status="unloaded",
+                message="unloaded",
+            )
+        )
+    return results
+
+
+def load_model_with_config(
+    requested_model: str,
+    *,
+    api_base: str,
+    parallelism: int | None = None,
+    context_length: int | None = None,
+    eval_batch_size: int | None = None,
+    flash_attention: bool | None = None,
+    num_experts: int | None = None,
+    offload_kv_cache_to_gpu: bool | None = None,
+    timeout_sec: float = 300.0,
+    urlopen: Callable[..., Any] = urllib.request.urlopen,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "model": requested_model,
+        "echo_load_config": True,
+    }
+    if parallelism is not None:
+        payload["parallel"] = parallelism
+    if context_length is not None:
+        payload["context_length"] = context_length
+    if eval_batch_size is not None:
+        payload["eval_batch_size"] = eval_batch_size
+    if flash_attention is not None:
+        payload["flash_attention"] = flash_attention
+    if num_experts is not None:
+        payload["num_experts"] = num_experts
+    if offload_kv_cache_to_gpu is not None:
+        payload["offload_kv_cache_to_gpu"] = offload_kv_cache_to_gpu
+
+    return _json_request(
+        api_base=api_base,
+        endpoint="/api/v1/models/load",
+        payload=payload,
+        timeout_sec=timeout_sec,
+        urlopen=urlopen,
+    )
+
+
 def _load_http_model_entries(
     *,
     api_base: str,
