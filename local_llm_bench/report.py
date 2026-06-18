@@ -394,6 +394,13 @@ def render_report_html(history_url: str) -> str:
       font-size: 22px;
       line-height: 1.3;
     }
+    .catalog-detail-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 18px;
+    }
     .catalog-meta-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -420,6 +427,13 @@ def render_report_html(history_url: str) -> str:
       font-weight: 600;
       word-break: break-word;
     }
+    .catalog-meta-caption {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 400;
+      line-height: 1.4;
+      margin-top: 5px;
+    }
     .catalog-section-title {
       font-size: 12px;
       font-weight: 700;
@@ -427,6 +441,9 @@ def render_report_html(history_url: str) -> str:
       letter-spacing: 0.06em;
       color: var(--muted);
       margin-bottom: 10px;
+    }
+    .catalog-section + .catalog-section {
+      margin-top: 18px;
     }
     .catalog-prompt {
       margin: 0;
@@ -766,30 +783,120 @@ def render_report_html(history_url: str) -> str:
       font-size: 13px;
       line-height: 1.7;
     }
-    .telemetry-layout {
-      display: grid;
-      grid-template-columns: minmax(0, 1.1fr) minmax(360px, 0.9fr);
-      gap: 16px;
-      align-items: start;
-    }
-    .telemetry-chart {
-      min-height: 320px;
+    .sub-nav {
+      display: inline-flex;
+      gap: 6px;
+      padding: 4px;
       border: 1px solid var(--border);
-      border-radius: 14px;
-      background: rgba(0,0,0,0.18);
-      overflow-x: auto;
+      border-radius: 10px;
+      background: rgba(0,0,0,0.16);
+      flex-wrap: wrap;
+    }
+    .sub-nav-pill {
+      cursor: pointer;
+      border-radius: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      padding: 7px 10px;
+      user-select: none;
+    }
+    .sub-nav-pill.active {
+      background: rgba(78, 201, 176, 0.14);
+      color: var(--text);
+      box-shadow: inset 0 0 0 1px rgba(78, 201, 176, 0.24);
+    }
+    .telemetry-layout {
+      grid-template-columns: minmax(360px, 0.9fr) minmax(520px, 1.4fr);
+    }
+    .telemetry-row.active td {
+      background: rgba(78, 201, 176, 0.12);
+      border-bottom-color: rgba(78, 201, 176, 0.28);
+    }
+    .telemetry-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+    }
+    .telemetry-mode-meta {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .telemetry-help {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: rgba(255,255,255,0.025);
+      padding: 10px 14px;
+      margin-bottom: 16px;
+      font-size: 12px;
+    }
+    .telemetry-help > summary {
+      cursor: pointer;
+      font-weight: 700;
+      color: var(--text);
+      list-style: none;
+    }
+    .telemetry-help > summary::-webkit-details-marker { display: none; }
+    .telemetry-help > summary::before {
+      content: "\\25B8";
+      display: inline-block;
+      margin-right: 8px;
+      color: var(--muted);
+      transition: transform 0.15s ease;
+    }
+    .telemetry-help[open] > summary::before { transform: rotate(90deg); }
+    .telemetry-help-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 6px 22px;
+      margin-top: 10px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+    .telemetry-help-grid b {
+      color: var(--text);
+      font-weight: 700;
+    }
+    .telemetry-group-title {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin: 0 0 8px;
+    }
+    .telemetry-group + .telemetry-group { margin-top: 16px; }
+    .telemetry-chart-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 12px;
+      margin-top: 14px;
+    }
+    .telemetry-chart-card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: rgba(255,255,255,0.025);
       padding: 12px;
     }
-    .telemetry-chart svg {
-      display: block;
-      width: 100%;
-      min-width: 720px;
-      height: auto;
-      font-family: var(--mono);
+    .telemetry-chart-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 8px;
     }
-    .telemetry-axis {
-      stroke: rgba(255,255,255,0.16);
+    .telemetry-chart {
+      width: 100%;
+      height: 240px;
+      overflow: visible;
+    }
+    .telemetry-axis,
+    .telemetry-grid-line {
+      stroke: var(--border);
       stroke-width: 1;
+      vector-effect: non-scaling-stroke;
     }
     .telemetry-label {
       fill: var(--muted);
@@ -799,40 +906,6 @@ def render_report_html(history_url: str) -> str:
     .telemetry-bar-error { fill: rgba(241, 76, 76, 0.72); }
     .telemetry-bar-timeout { fill: rgba(220, 220, 170, 0.76); }
     .telemetry-bar-other { fill: rgba(0, 122, 204, 0.72); }
-    .telemetry-table-wrap {
-      max-height: 360px;
-      overflow: auto;
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      background: rgba(0,0,0,0.12);
-    }
-    .telemetry-table-wrap th {
-      position: sticky;
-      top: 0;
-      z-index: 1;
-      background: var(--bg-secondary);
-    }
-    .telemetry-context-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 16px;
-      margin-top: 16px;
-    }
-    .telemetry-scatter {
-      min-height: 300px;
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      background: rgba(0,0,0,0.16);
-      overflow-x: auto;
-      padding: 12px;
-    }
-    .telemetry-scatter svg {
-      display: block;
-      width: 100%;
-      min-width: 520px;
-      height: auto;
-      font-family: var(--mono);
-    }
     .telemetry-dot-success { fill: var(--good); stroke: rgba(255,255,255,0.55); }
     .telemetry-dot-error { fill: var(--bad); stroke: rgba(255,255,255,0.55); }
     .telemetry-dot-timeout { fill: var(--gold); stroke: rgba(255,255,255,0.55); }
@@ -843,47 +916,52 @@ def render_report_html(history_url: str) -> str:
       stroke-dasharray: 5 5;
       opacity: 0.82;
     }
-    .telemetry-turn-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 16px;
-      margin-top: 16px;
-    }
-    .telemetry-turn-chart {
-      min-height: 280px;
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      background: rgba(0,0,0,0.16);
-      overflow-x: auto;
-      padding: 12px;
-    }
-    .telemetry-turn-chart svg {
-      display: block;
-      width: 100%;
-      min-width: 520px;
-      height: auto;
-      font-family: var(--mono);
-    }
     .telemetry-line {
       fill: none;
-      stroke-width: 2.2;
+      stroke-width: 2.4;
       stroke-linecap: round;
       stroke-linejoin: round;
+      vector-effect: non-scaling-stroke;
     }
     .telemetry-point {
-      stroke: rgba(255,255,255,0.5);
-      stroke-width: 1;
+      stroke: var(--bg-secondary);
+      stroke-width: 1.5;
+      vector-effect: non-scaling-stroke;
+    }
+    .telemetry-area {
+      stroke: none;
+      opacity: 0.12;
+    }
+    .telemetry-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 8px;
+    }
+    .telemetry-chart-desc {
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.45;
+      margin: -2px 0 10px;
+    }
+    .telemetry-chart-note {
+      grid-column: 1 / -1;
+      color: var(--muted);
+      font-size: 11px;
+      margin-top: 2px;
     }
     .telemetry-stack-bar {
-      height: 12px;
       display: flex;
+      height: 22px;
       overflow: hidden;
-      border-radius: 999px;
-      border: 1px solid rgba(255,255,255,0.09);
-      background: rgba(255,255,255,0.05);
-      margin: 8px 0 10px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.04);
     }
     .telemetry-stack-seg {
+      height: 100%;
       min-width: 2px;
     }
     .telemetry-stack-legend {
@@ -892,6 +970,7 @@ def render_report_html(history_url: str) -> str:
       gap: 8px 12px;
       color: var(--muted);
       font-size: 12px;
+      margin-top: 10px;
     }
     .telemetry-stack-legend-item {
       display: inline-flex;
@@ -904,6 +983,52 @@ def render_report_html(history_url: str) -> str:
       height: 10px;
       border-radius: 999px;
       box-shadow: 0 0 0 1px rgba(255,255,255,0.18);
+    }
+    .telemetry-subsection-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--text);
+      margin: 16px 0 8px;
+    }
+    .telemetry-table-wrap {
+      max-height: 420px;
+      overflow: auto;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: rgba(0,0,0,0.12);
+    }
+    .telemetry-table-wrap th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: var(--bg-secondary);
+    }
+    .telemetry-rank-list { display: grid; gap: 7px; }
+    .telemetry-rank-row {
+      display: grid;
+      grid-template-columns: minmax(120px, 200px) 1fr auto;
+      align-items: center;
+      gap: 10px;
+      font-size: 12px;
+    }
+    .telemetry-rank-label {
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 11px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .telemetry-rank-track {
+      height: 12px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.06);
+      overflow: hidden;
+    }
+    .telemetry-rank-fill { height: 100%; border-radius: 999px; }
+    .telemetry-rank-value {
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
     }
     .status-bar {
       display: flex;
@@ -1098,92 +1223,7 @@ def render_report_html(history_url: str) -> str:
       </div>
 
       <div id="telemetry-panel" class="card" style="display:none;">
-        <div class="toolbar">
-          <select id="telemetry-run-filter"></select>
-          <div class="filter-meta" id="telemetry-run-meta"></div>
-        </div>
-        <div class="stat-grid" id="telemetry-stats"></div>
-        <div class="telemetry-layout">
-          <section class="detail-section">
-            <h3 class="detail-section-heading">Performance Timeline</h3>
-            <div class="telemetry-chart" id="telemetry-chart"></div>
-          </section>
-          <section class="detail-section">
-            <h3 class="detail-section-heading">Event Log</h3>
-            <div class="telemetry-table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Offset</th>
-                    <th>Event</th>
-                    <th>Status</th>
-                    <th>Scope</th>
-                  </tr>
-                </thead>
-                <tbody id="telemetry-event-body"></tbody>
-              </table>
-            </div>
-          </section>
-        </div>
-        <div class="telemetry-context-grid">
-          <section class="detail-section">
-            <h3 class="detail-section-heading">Generated Context vs Time</h3>
-            <div class="telemetry-scatter" id="telemetry-generated-context-chart"></div>
-          </section>
-          <section class="detail-section">
-            <h3 class="detail-section-heading">Input Context vs Time</h3>
-            <div class="telemetry-scatter" id="telemetry-input-context-chart"></div>
-          </section>
-        </div>
-        <section class="detail-section" style="margin-top: 16px;">
-          <h3 class="detail-section-heading">Per-turn LLM Usage</h3>
-          <div class="stat-grid" id="telemetry-turn-stats"></div>
-          <div class="telemetry-turn-grid">
-            <div class="telemetry-turn-chart" id="telemetry-turn-context-chart"></div>
-            <div class="telemetry-turn-chart" id="telemetry-turn-speed-chart"></div>
-            <div class="telemetry-turn-chart">
-              <h3 class="detail-section-heading">Input Growth vs Time</h3>
-              <div id="telemetry-turn-growth-chart"></div>
-            </div>
-          </div>
-          <div class="detail-section" id="telemetry-prompt-composition" style="margin-top: 16px;"></div>
-          <div class="telemetry-table-wrap" style="margin-top: 16px; max-height: 420px;">
-            <table>
-              <thead>
-                <tr>
-                  <th>Scope</th>
-                  <th>Turn</th>
-                  <th>Prompt</th>
-                  <th>Prompt Δ</th>
-                  <th>Cached</th>
-                  <th>Completion</th>
-                  <th>Cumulative</th>
-                  <th>TTFT</th>
-                  <th>Elapsed</th>
-                  <th>Gen Speed</th>
-                </tr>
-              </thead>
-              <tbody id="telemetry-turn-body"></tbody>
-            </table>
-          </div>
-        </section>
-        <section class="detail-section" style="margin-top: 16px;">
-          <h3 class="detail-section-heading">Spans</h3>
-          <table id="telemetry-span-table">
-            <thead>
-              <tr>
-                <th>Span</th>
-                <th>Status</th>
-                <th>Wall</th>
-                <th>Model Latency</th>
-                <th>TTFT</th>
-                <th>Decode</th>
-                <th>Tools</th>
-              </tr>
-            </thead>
-            <tbody id="telemetry-span-body"></tbody>
-          </table>
-        </section>
+        <div id="telemetry-content"></div>
       </div>
 
       <div id="errors-panel" class="card" style="display:none;">
@@ -1342,7 +1382,9 @@ def render_report_html(history_url: str) -> str:
         selectedErrorSignature: "",
         selectedErrorEventKey: "",
         selectedRecordKey: "",
+        telemetryMode: "runs",
         telemetryRunId: "",
+        telemetryQuestionKey: "",
         selectedPrompt: "",
         rawLogCache: {},
       };
@@ -2925,25 +2967,41 @@ def render_report_html(history_url: str) -> str:
         );
       }
 
-      function turnUsageForRun(run) {
+      function telemetrySequencesForRun(run) {
         const records = Array.isArray(run?.records) ? run.records : [];
-        const allTurns = [];
+        const sequences = [];
+        const runInfo = normalizeModelInfo(run?.model_info, run?.model);
+        const modelLabel = comparisonModelKey(run?.model, runInfo, run?.lmstudio_parallelism);
         records.forEach((record, recordIndex) => {
+          const recordInfo = normalizeModelInfo(record?.model_info, record?.model || run?.model);
+          const recordModel = comparisonModelKey(record?.model || run?.model, recordInfo, record?.lmstudio_parallelism ?? run?.lmstudio_parallelism);
           const baseContext = {
             phase: record.phase || "",
             iteration: record.iteration ?? "",
             status: record.status || "unknown",
             record_index: recordIndex,
+            run_id: run?.run_id || "",
+            run_started_at: run?.started_at || "",
+            run_display: telemetryRunLabel(run),
+            model: recordModel || modelLabel || record?.model || run?.model || "-",
+            raw_model: record?.model || run?.model || "",
+            provider: record?.provider || run?.provider || "",
+            benchmark_id: record?.benchmark_id || run?.benchmark_id || "",
+            benchmark_title: record?.benchmark_title || run?.benchmark_title || "",
+            prompt_text: run?.prompt_text || "",
           };
           const questionResults = Array.isArray(record?.question_results)
             ? record.question_results.filter((item) => item && typeof item === "object")
             : [];
           if (questionResults.length) {
-            questionResults.forEach((questionResult) => {
+            questionResults.forEach((questionResult, questionIndex) => {
               const context = {
                 ...baseContext,
                 question_id: questionResult.question_id || "",
+                question_index: questionIndex,
                 status: questionResult.status || record.status || "unknown",
+                benchmark_correct: questionResult.benchmark_correct ?? record.benchmark_correct,
+                benchmark_score: firstNumericValue([questionResult.benchmark_score, record.benchmark_score]),
               };
               const rawTurns = Array.isArray(questionResult.turn_usage) ? questionResult.turn_usage : [];
               let turns = rawTurns.map((turn, index) => normalizeTelemetryTurn(turn, index, context));
@@ -2951,7 +3009,15 @@ def render_report_html(history_url: str) -> str:
                 const fallback = fallbackTurnFromMetrics(questionResult, context);
                 if (fallback) turns = [fallback];
               }
-              allTurns.push(...enrichTelemetryTurnSequence(turns));
+              const enriched = enrichTelemetryTurnSequence(turns);
+              if (enriched.length) {
+                sequences.push({
+                  ...context,
+                  sequence_index: sequences.length,
+                  source: "question",
+                  turns: enriched,
+                });
+              }
             });
             return;
           }
@@ -2961,9 +3027,30 @@ def render_report_html(history_url: str) -> str:
             const fallback = fallbackTurnFromMetrics(record, baseContext);
             if (fallback) turns = [fallback];
           }
-          allTurns.push(...enrichTelemetryTurnSequence(turns));
+          const enriched = enrichTelemetryTurnSequence(turns);
+          if (enriched.length) {
+            sequences.push({
+              ...baseContext,
+              question_id: "",
+              question_index: 0,
+              benchmark_correct: record.benchmark_correct,
+              benchmark_score: firstNumericValue([record.benchmark_score]),
+              sequence_index: sequences.length,
+              source: "record",
+              turns: enriched,
+            });
+          }
         });
-        return allTurns.map((turn, index) => ({ ...turn, order_index: index + 1 }));
+        return sequences;
+      }
+
+      function turnUsageForRun(run) {
+        return telemetrySequencesForRun(run)
+          .flatMap((sequence) => {
+            const { turns, ...sequenceContext } = sequence;
+            return turns.map((turn) => ({ ...sequenceContext, ...turn }));
+          })
+          .map((turn, index) => ({ ...turn, order_index: index + 1 }));
       }
 
       const TELEMETRY_PROMPT_CATEGORIES = [
@@ -2997,17 +3084,17 @@ def render_report_html(history_url: str) -> str:
         return { categories, tools, sampleCount };
       }
 
-      function renderTelemetryStackBar(segments) {
+      function renderTelemetryStackBar(segments, formatter = (value) => `${formatNumber(value, 0)} tok`) {
         const valid = segments.filter((segment) => Number(segment.value) > 0);
         const total = valid.reduce((sum, segment) => sum + Number(segment.value), 0);
         if (!(total > 0)) return "";
         const bar = valid.map((segment) => {
           const pct = (Number(segment.value) / total) * 100;
-          return `<div class="telemetry-stack-seg" style="width:${pct.toFixed(2)}%;background:${segment.color}" title="${escapeHtml(segment.label)}: ${formatNumber(segment.value, 0)} tok (${pct.toFixed(0)}%)"></div>`;
+          return `<div class="telemetry-stack-seg" style="width:${pct.toFixed(2)}%;background:${segment.color}" title="${escapeHtml(segment.label)}: ${escapeHtml(formatter(segment.value))} (${pct.toFixed(0)}%)"></div>`;
         }).join("");
         const legend = valid.map((segment) => {
           const pct = (Number(segment.value) / total) * 100;
-          return `<span class="telemetry-stack-legend-item"><span class="telemetry-swatch" style="background:${segment.color}"></span>${escapeHtml(segment.label)} · ${formatNumber(segment.value, 0)} tok (${pct.toFixed(0)}%)</span>`;
+          return `<span class="telemetry-stack-legend-item"><span class="telemetry-swatch" style="background:${segment.color}"></span>${escapeHtml(segment.label)} · ${escapeHtml(formatter(segment.value))} (${pct.toFixed(0)}%)</span>`;
         }).join("");
         return `<div class="telemetry-stack-bar">${bar}</div><div class="telemetry-stack-legend">${legend}</div>`;
       }
@@ -3032,6 +3119,803 @@ def render_report_html(history_url: str) -> str:
           <div class="table-note">${formatNumber(composition.sampleCount, 0)} turn samples · estimated by characters, not provider tokenizer counts.</div>
           ${renderTelemetryStackBar(segments)}
           ${toolRows ? `<div class="tag-list" style="margin-top: 10px;">${toolRows}</div>` : ""}
+        `;
+      }
+
+      function formatCount(value) {
+        const num = Number(value);
+        if (!Number.isFinite(num)) return "-";
+        return String(Math.round(num).toLocaleString());
+      }
+
+      function formatAveragedCount(value, digits = 1) {
+        const num = Number(value);
+        if (!Number.isFinite(num)) return "-";
+        const precision = Math.abs(num - Math.round(num)) < 0.05 ? 0 : digits;
+        return num.toLocaleString(undefined, {
+          minimumFractionDigits: precision,
+          maximumFractionDigits: precision,
+        });
+      }
+
+      function formatTokensCompact(value) {
+        const num = Number(value);
+        if (!Number.isFinite(num)) return "-";
+        const abs = Math.abs(num);
+        if (abs >= 1e6) return `${(num / 1e6).toFixed(abs >= 1e7 ? 0 : 1)}M`;
+        if (abs >= 1e3) return `${(num / 1e3).toFixed(abs >= 1e4 ? 0 : 1)}k`;
+        return String(Math.round(num));
+      }
+
+      function formatSignedTokensCompact(value) {
+        const num = Number(value);
+        if (!Number.isFinite(num)) return "-";
+        if (num === 0) return "0";
+        return `${num > 0 ? "+" : "-"}${formatTokensCompact(Math.abs(num))}`;
+      }
+
+      function formatDuration(value) {
+        const num = Number(value);
+        if (!Number.isFinite(num)) return "-";
+        if (num < 1) return `${(num * 1000).toFixed(0)} ms`;
+        return `${num.toFixed(num >= 10 ? 1 : 2)} s`;
+      }
+
+      function formatTelemetrySpeed(value) {
+        return Number.isFinite(Number(value)) ? `${Number(value).toFixed(1)} tok/s` : '<span class="muted">-</span>';
+      }
+
+      function telemetryMetricTile(label, value, caption) {
+        return `
+          <div class="catalog-meta-item">
+            <div class="catalog-meta-label">${escapeHtml(label)}</div>
+            <div class="catalog-meta-value">${value}</div>
+            ${caption ? `<div class="catalog-meta-caption">${escapeHtml(caption)}</div>` : ""}
+          </div>
+        `;
+      }
+
+      function telemetryEmptyComposition() {
+        return { categories: new Map(), tools: new Map(), sampleCount: 0 };
+      }
+
+      function telemetryAccumulateComposition(target, pb) {
+        if (!target || !pb || typeof pb !== "object") return;
+        const cats = pb.categories || {};
+        Object.keys(cats).forEach((key) => {
+          const est = normalizeNumeric(cats[key]?.estimated_tokens);
+          if (est != null && est > 0) target.categories.set(key, (target.categories.get(key) || 0) + est);
+        });
+        const tools = pb.tool_results_by_tool || {};
+        Object.keys(tools).forEach((name) => {
+          const est = normalizeNumeric(tools[name]?.estimated_tokens);
+          if (est != null && est > 0) target.tools.set(name, (target.tools.get(name) || 0) + est);
+        });
+        target.sampleCount += 1;
+      }
+
+      function scaleTelemetryComposition(comp, denominator) {
+        const divisor = Number(denominator);
+        if (!comp || !Number.isFinite(divisor) || divisor <= 0) return comp || telemetryEmptyComposition();
+        const scaled = telemetryEmptyComposition();
+        comp.categories.forEach((value, key) => scaled.categories.set(key, value / divisor));
+        comp.tools.forEach((value, key) => scaled.tools.set(key, value / divisor));
+        scaled.sampleCount = comp.sampleCount;
+        return scaled;
+      }
+
+      function renderTelemetryToolRanking(toolMap, limit = 8) {
+        const entries = Array.from(toolMap.entries())
+          .map(([name, value]) => ({ name, value: Number(value) }))
+          .filter((entry) => entry.value > 0)
+          .sort((a, b) => b.value - a.value);
+        if (!entries.length) {
+          return '<div class="detail-empty">ツール出力の内訳は記録されていません。</div>';
+        }
+        const max = entries[0].value;
+        const rows = entries.slice(0, limit).map((entry) => {
+          const pct = max > 0 ? (entry.value / max) * 100 : 0;
+          return `
+            <div class="telemetry-rank-row">
+              <div class="telemetry-rank-label" title="${escapeHtml(entry.name)}">${escapeHtml(entry.name)}</div>
+              <div class="telemetry-rank-track"><div class="telemetry-rank-fill" style="width:${pct.toFixed(1)}%;background:#ce9178"></div></div>
+              <div class="telemetry-rank-value">${formatTokensCompact(entry.value)}</div>
+            </div>
+          `;
+        }).join("");
+        const moreNote = entries.length > limit ? `<div class="telemetry-chart-note">他 ${formatCount(entries.length - limit)} ツール</div>` : "";
+        return `<div class="telemetry-rank-list">${rows}</div>${moreNote}`;
+      }
+
+      function telemetryToolEstimateMap(turn) {
+        const tools = turn?.prompt_breakdown && typeof turn.prompt_breakdown === "object"
+          ? (turn.prompt_breakdown.tool_results_by_tool || {})
+          : {};
+        const result = new Map();
+        Object.keys(tools).forEach((name) => {
+          const estimated = normalizeNumeric(tools[name]?.estimated_tokens);
+          if (estimated != null && estimated > 0) result.set(name, estimated);
+        });
+        return result;
+      }
+
+      function buildTelemetryToolGrowthRows(turnSequences) {
+        const stats = new Map();
+        (turnSequences || []).forEach((sequence) => {
+          let previous = new Map();
+          (sequence || []).forEach((turn) => {
+            const current = telemetryToolEstimateMap(turn);
+            current.forEach((value, name) => {
+              const delta = value - (previous.get(name) || 0);
+              if (!(delta > 0)) return;
+              if (!stats.has(name)) {
+                stats.set(name, { name, total: 0, events: 0, max: 0 });
+              }
+              const stat = stats.get(name);
+              stat.total += delta;
+              stat.events += 1;
+              stat.max = Math.max(stat.max, delta);
+            });
+            previous = current;
+          });
+        });
+        return Array.from(stats.values())
+          .map((stat) => ({ ...stat, avg: stat.events ? stat.total / stat.events : 0 }))
+          .sort((a, b) => {
+            if (b.avg !== a.avg) return b.avg - a.avg;
+            return b.total - a.total;
+          });
+      }
+
+      function renderTelemetryToolGrowthSection(turnSequences, limit = 8) {
+        const entries = buildTelemetryToolGrowthRows(turnSequences);
+        const body = entries.length
+          ? (() => {
+            const maxAvg = Math.max(...entries.map((entry) => entry.avg), 1);
+            const rows = entries.slice(0, limit).map((entry) => {
+              const pct = (entry.avg / maxAvg) * 100;
+              const detail = `total ${formatTokensCompact(entry.total)} · events ${formatCount(entry.events)} · max ${formatTokensCompact(entry.max)}`;
+              return `
+                <div class="telemetry-rank-row">
+                  <div class="telemetry-rank-label" title="${escapeHtml(entry.name)}">${escapeHtml(entry.name)}</div>
+                  <div class="telemetry-rank-track"><div class="telemetry-rank-fill" style="width:${pct.toFixed(1)}%;background:#dcdcaa"></div></div>
+                  <div class="telemetry-rank-value" title="${escapeHtml(detail)}">avg ${formatTokensCompact(entry.avg)}<br><span class="muted">${escapeHtml(detail)}</span></div>
+                </div>
+              `;
+            }).join("");
+            const moreNote = entries.length > limit ? `<div class="telemetry-chart-note">他 ${formatCount(entries.length - limit)} ツール</div>` : "";
+            return `<div class="telemetry-chart-desc">各 tool の累積 tool output 推定トークンを前 turn と比較し、増えた分だけを集計。Avg Δ は増加が発生した turn あたりの平均増分です。</div><div class="telemetry-rank-list">${rows}</div>${moreNote}`;
+          })()
+          : '<div class="detail-empty">tool別の増分を計算できる prompt内訳はありません。</div>';
+        return `
+          <div class="catalog-section">
+            <div class="catalog-section-title">Tool output growth by tool · ツール別の入力増分</div>
+            ${body}
+          </div>
+        `;
+      }
+
+      function renderTelemetryTimeBreakdownSection(avgWaitSec, avgGenSec) {
+        const total = (Number(avgWaitSec) || 0) + (Number(avgGenSec) || 0);
+        if (!(total > 0)) return "";
+        const segments = [
+          { label: "First-token wait 待ち", value: Number(avgWaitSec) || 0, color: "#ce9178" },
+          { label: "Generation 生成", value: Number(avgGenSec) || 0, color: "#c586c0" },
+        ];
+        return `
+          <div class="catalog-section">
+            <div class="catalog-section-title">Time breakdown · 時間の内訳</div>
+            <div class="telemetry-chart-desc">平均処理時間を「最初の出力を待つ時間 (TTFT)」と「実際に生成していた時間」に分解。各実行の平均 elapsed = 待ち + 生成。</div>
+            ${renderTelemetryStackBar(segments, formatDuration)}
+          </div>
+        `;
+      }
+
+      function renderTelemetryCompositionSection(comp) {
+        const catSegments = TELEMETRY_PROMPT_CATEGORIES.map((cat) => ({
+          label: cat.label,
+          value: comp ? (comp.categories.get(cat.key) || 0) : 0,
+          color: cat.color,
+        }));
+        const totalEst = catSegments.reduce((sum, segment) => sum + segment.value, 0);
+        const body = comp && totalEst > 0
+          ? `
+              <div class="telemetry-chart-desc">文脈（入力）を構成要素ごとに推定分解。複数実行の平均値で、文字数ベースの概算のため実トークン数とは差があります。推定平均 ${formatTokensCompact(totalEst)} tokens。</div>
+              ${renderTelemetryStackBar(catSegments)}
+              <div class="telemetry-subsection-title">Tool output by tool · ツール別の消費トークン（上位）</div>
+              ${renderTelemetryToolRanking(comp.tools)}
+            `
+          : '<div class="detail-empty">prompt内訳はこの選択では記録されていません。</div>';
+        return `
+          <div class="catalog-section">
+            <div class="catalog-section-title">Context composition · 文脈の内訳（推定）</div>
+            ${body}
+          </div>
+        `;
+      }
+
+      function renderTelemetryLineChart(records, series, title, valueFormatter = (value) => formatCount(value), emptyMessage = "No telemetry points.", description = "") {
+        const descHtml = description ? `<div class="telemetry-chart-desc">${escapeHtml(description)}</div>` : "";
+        const validSeries = series.map((item) => ({
+          ...item,
+          points: records
+            .map((record) => ({ x: normalizeNumeric(record.turn_index), y: Number(record[item.key]) }))
+            .filter((point) => point.x != null && Number.isFinite(point.x) && Number.isFinite(point.y)),
+        })).filter((item) => item.points.length);
+
+        if (!validSeries.length) {
+          return `<div class="telemetry-chart-card"><div class="telemetry-chart-title">${escapeHtml(title)}</div>${descHtml}<div class="detail-empty">${escapeHtml(emptyMessage)}</div></div>`;
+        }
+
+        const allPoints = validSeries.flatMap((item) => item.points);
+        const minX = Math.min(...allPoints.map((point) => point.x));
+        const maxX = Math.max(...allPoints.map((point) => point.x));
+        const minY = Math.min(...allPoints.map((point) => point.y), 0);
+        const maxY = Math.max(...allPoints.map((point) => point.y), minY + 1);
+        const width = 640;
+        const height = 240;
+        const right = 18;
+        const top = 14;
+        const bottom = 34;
+        const yRange = Math.max(maxY - minY, 1);
+        const yTicks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => minY + yRange * ratio);
+        const yTickLabels = yTicks.map((value) => String(valueFormatter(value)));
+        const left = Math.min(118, Math.max(48, Math.max(...yTickLabels.map((label) => label.length)) * 7 + 16));
+        const innerWidth = width - left - right;
+        const innerHeight = height - top - bottom;
+        const xScale = (value) => left + ((value - minX) / Math.max(maxX - minX, 1)) * innerWidth;
+        const yScale = (value) => top + innerHeight - ((value - minY) / yRange) * innerHeight;
+        const xValues = records.map((record) => normalizeNumeric(record.turn_index)).filter((value) => value != null);
+        const xTicks = xValues.filter((value, index, array) => (
+          index === 0 || index === array.length - 1 || index % Math.max(1, Math.ceil(array.length / 5)) === 0
+        ));
+        const grid = yTicks.map((value, index) => {
+          const y = yScale(value);
+          return `<line class="telemetry-grid-line" x1="${left}" y1="${y.toFixed(2)}" x2="${width - right}" y2="${y.toFixed(2)}"></line><text x="${left - 8}" y="${(y + 4).toFixed(2)}" text-anchor="end" fill="currentColor" font-size="11">${escapeHtml(yTickLabels[index])}</text>`;
+        }).join("");
+        const xLabels = xTicks.map((value) => {
+          const x = xScale(value);
+          return `<text x="${x.toFixed(2)}" y="${height - 10}" text-anchor="middle" fill="currentColor" font-size="11">${escapeHtml(value)}</text>`;
+        }).join("");
+        const baseY = yScale(Math.min(Math.max(0, minY), maxY)).toFixed(2);
+        const lineMarkup = validSeries.map((item) => {
+          const points = item.points.map((point) => `${xScale(point.x).toFixed(2)},${yScale(point.y).toFixed(2)}`).join(" ");
+          const firstX = xScale(item.points[0].x).toFixed(2);
+          const lastX = xScale(item.points[item.points.length - 1].x).toFixed(2);
+          const area = item.points.length > 1
+            ? `<polygon class="telemetry-area" points="${firstX},${baseY} ${points} ${lastX},${baseY}" fill="${item.color}"></polygon>`
+            : "";
+          const dots = item.points.length <= 80
+            ? item.points.map((point) => `<circle class="telemetry-point" cx="${xScale(point.x).toFixed(2)}" cy="${yScale(point.y).toFixed(2)}" r="3" fill="${item.color}"><title>turn ${escapeHtml(point.x)} · ${escapeHtml(item.label)}: ${escapeHtml(valueFormatter(point.y))}</title></circle>`).join("")
+            : "";
+          return `${area}<polyline class="telemetry-line" points="${points}" stroke="${item.color}"></polyline>${dots}`;
+        }).join("");
+        const legend = validSeries.map((item) => `<span class="telemetry-legend-item"><span class="telemetry-swatch" style="background:${item.color}"></span>${escapeHtml(item.label)}</span>`).join("");
+        return `
+          <div class="telemetry-chart-card">
+            <div class="telemetry-chart-title">${escapeHtml(title)}</div>
+            ${descHtml}
+            <svg class="telemetry-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(title)}">
+              <g style="color:var(--muted)">
+                ${grid}
+                <line class="telemetry-axis" x1="${left}" y1="${height - bottom}" x2="${width - right}" y2="${height - bottom}"></line>
+                <line class="telemetry-axis" x1="${left}" y1="${top}" x2="${left}" y2="${height - bottom}"></line>
+                ${xLabels}
+              </g>
+              ${lineMarkup}
+            </svg>
+            ${legend ? `<div class="telemetry-legend">${legend}</div>` : ""}
+          </div>
+        `;
+      }
+
+      function telemetryCorrelation(points) {
+        if (!Array.isArray(points) || points.length < 2) return NaN;
+        const n = points.length;
+        const meanX = points.reduce((sum, point) => sum + point.x, 0) / n;
+        const meanY = points.reduce((sum, point) => sum + point.y, 0) / n;
+        let numerator = 0;
+        let denomX = 0;
+        let denomY = 0;
+        points.forEach((point) => {
+          const dx = point.x - meanX;
+          const dy = point.y - meanY;
+          numerator += dx * dy;
+          denomX += dx * dx;
+          denomY += dy * dy;
+        });
+        return denomX > 0 && denomY > 0 ? numerator / Math.sqrt(denomX * denomY) : NaN;
+      }
+
+      function renderTelemetryScatterChart(records, options) {
+        const {
+          xKey,
+          yKey,
+          title,
+          xLabel,
+          yLabel,
+          color,
+          xFormatter = formatTokensCompact,
+          yFormatter = formatDuration,
+          emptyMessage = "No matching telemetry points.",
+          description = "",
+        } = options;
+        const descHtml = description ? `<div class="telemetry-chart-desc">${escapeHtml(description)}</div>` : "";
+        const points = (records || [])
+          .map((record, index) => ({
+            x: Number(record[xKey]),
+            y: Number(record[yKey]),
+            turn: normalizeNumeric(record.turn_index) || (index + 1),
+            question: String(record.question_id || ""),
+            samples: normalizeNumeric(record.sample_count),
+          }))
+          .filter((point) => Number.isFinite(point.x) && point.x > 0 && Number.isFinite(point.y) && point.y >= 0);
+
+        if (!points.length) {
+          return `<div class="telemetry-chart-card"><div class="telemetry-chart-title">${escapeHtml(title)}</div>${descHtml}<div class="detail-empty">${escapeHtml(emptyMessage)}</div></div>`;
+        }
+
+        const width = 640;
+        const height = 260;
+        const right = 24;
+        const top = 16;
+        const bottom = 48;
+        const maxX = Math.max(...points.map((point) => point.x), 1);
+        const maxY = Math.max(...points.map((point) => point.y), 1);
+        const xTicks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => maxX * ratio);
+        const yTicks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => maxY * ratio);
+        const yTickLabels = yTicks.map((value) => String(yFormatter(value)));
+        const left = Math.min(118, Math.max(54, Math.max(...yTickLabels.map((label) => label.length)) * 7 + 16));
+        const innerWidth = width - left - right;
+        const innerHeight = height - top - bottom;
+        const xScale = (value) => left + (value / maxX) * innerWidth;
+        const yScale = (value) => top + innerHeight - (value / maxY) * innerHeight;
+        const grid = yTicks.map((value, index) => {
+          const y = yScale(value);
+          return `<line class="telemetry-grid-line" x1="${left}" y1="${y.toFixed(2)}" x2="${width - right}" y2="${y.toFixed(2)}"></line><text x="${left - 8}" y="${(y + 4).toFixed(2)}" text-anchor="end" fill="currentColor" font-size="11">${escapeHtml(yTickLabels[index])}</text>`;
+        }).join("");
+        const xLabels = xTicks.map((value) => {
+          const x = xScale(value);
+          return `<text x="${x.toFixed(2)}" y="${height - 18}" text-anchor="middle" fill="currentColor" font-size="11">${escapeHtml(xFormatter(value))}</text>`;
+        }).join("");
+        const dots = points.map((point) => {
+          const titleParts = [`turn ${point.turn}`, `${xLabel}: ${xFormatter(point.x)}`, `${yLabel}: ${yFormatter(point.y)}`];
+          if (point.samples != null) titleParts.push(`samples ${formatCount(point.samples)}`);
+          if (point.question) titleParts.unshift(point.question);
+          return `<circle class="telemetry-point" cx="${xScale(point.x).toFixed(2)}" cy="${yScale(point.y).toFixed(2)}" r="3.2" fill="${color}"><title>${escapeHtml(titleParts.join(" · "))}</title></circle>`;
+        }).join("");
+        const r = telemetryCorrelation(points);
+        const note = Number.isFinite(r)
+          ? `points ${formatCount(points.length)} · r ${r.toFixed(2)}`
+          : `points ${formatCount(points.length)}`;
+        return `
+          <div class="telemetry-chart-card">
+            <div class="telemetry-chart-title">${escapeHtml(title)}</div>
+            ${descHtml}
+            <svg class="telemetry-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(title)}">
+              <g style="color:var(--muted)">
+                ${grid}
+                <line class="telemetry-axis" x1="${left}" y1="${height - bottom}" x2="${width - right}" y2="${height - bottom}"></line>
+                <line class="telemetry-axis" x1="${left}" y1="${top}" x2="${left}" y2="${height - bottom}"></line>
+                ${xLabels}
+                <text x="${((left + width - right) / 2).toFixed(2)}" y="${height - 4}" text-anchor="middle" fill="currentColor" font-size="11">${escapeHtml(xLabel)}</text>
+                <text x="14" y="${((top + height - bottom) / 2).toFixed(2)}" transform="rotate(-90 14 ${((top + height - bottom) / 2).toFixed(2)})" text-anchor="middle" fill="currentColor" font-size="11">${escapeHtml(yLabel)}</text>
+              </g>
+              ${dots}
+            </svg>
+            <div class="telemetry-chart-note">${escapeHtml(note)}</div>
+          </div>
+        `;
+      }
+
+      function withTelemetryRelationTimes(turns) {
+        return (turns || []).map((turn) => ({
+          ...turn,
+          prompt_growth_tokens: Math.max(0, Number(turn.prompt_delta_tokens) || 0),
+          generation_time_sec: Number.isFinite(Number(turn.post_first_token_sec)) ? Number(turn.post_first_token_sec) : Number(turn.elapsed_sec),
+          input_time_sec: Number.isFinite(Number(turn.prompt_load_sec)) ? Number(turn.prompt_load_sec) : Number(turn.ttft_sec),
+        }));
+      }
+
+      function renderTelemetrySizeTimeCharts(turns) {
+        const records = withTelemetryRelationTimes(turns);
+        return `
+          ${renderTelemetryScatterChart(records, {
+            xKey: "completion_tokens",
+            yKey: "generation_time_sec",
+            title: "Generated size vs generation time · 生成量と生成時間",
+            xLabel: "Generated tokens",
+            yLabel: "Generation time",
+            color: "#c586c0",
+            emptyMessage: "生成量と生成時間の両方がある turn がありません。",
+            description: "横軸は出力トークン数、縦軸は最初の出力後に生成へ使った時間。長い回答そのものが遅延を支配しているかを見ます。",
+          })}
+          ${renderTelemetryScatterChart(records, {
+            xKey: "completion_tokens",
+            yKey: "completion_tokens_per_sec",
+            title: "Generated size vs generation speed · 生成量と生成速度",
+            xLabel: "Generated tokens",
+            yLabel: "Gen speed",
+            color: "#569cd6",
+            yFormatter: (value) => Number.isFinite(Number(value)) ? `${Number(value).toFixed(1)} tok/s` : "-",
+            emptyMessage: "生成量と生成速度の両方がある turn がありません。",
+            description: "横軸は出力トークン数、縦軸は待ち時間込みの実効生成速度。少量出力なのに低い点は、生成そのものより待ち時間の影響が強い turn です。",
+          })}
+          ${renderTelemetryScatterChart(records, {
+            xKey: "prompt_tokens",
+            yKey: "input_time_sec",
+            title: "Input context vs wait time · 入力文脈と待ち時間",
+            xLabel: "Input tokens",
+            yLabel: "Prompt/TTFT time",
+            color: "#4ec9b0",
+            emptyMessage: "入力文脈サイズと待ち時間の両方がある turn がありません。",
+            description: "横軸は入力文脈トークン数、縦軸は prompt load または TTFT。文脈肥大で初回応答待ちが伸びているかを見ます。",
+          })}
+          ${renderTelemetryScatterChart(records, {
+            xKey: "prompt_growth_tokens",
+            yKey: "input_time_sec",
+            title: "Prompt growth vs wait time · 入力増分と待ち時間",
+            xLabel: "Prompt Δ tokens",
+            yLabel: "Prompt/TTFT time",
+            color: "#dcdcaa",
+            emptyMessage: "入力増分と待ち時間の両方がある turn がありません。",
+            description: "横軸は前ターンから増えた入力トークン量、縦軸は prompt load または TTFT。総コンテキストではなく、新しく増えた文脈が待ち時間に効いているかを見ます。",
+          })}
+        `;
+      }
+
+      function telemetryCorrectValue(value) {
+        if (typeof value === "boolean") return value;
+        if (typeof value === "number" && Number.isFinite(value)) return value > 0;
+        if (typeof value === "string") {
+          const lowered = value.trim().toLowerCase();
+          if (["true", "ok", "correct", "1"].includes(lowered)) return true;
+          if (["false", "ng", "incorrect", "0"].includes(lowered)) return false;
+        }
+        return null;
+      }
+
+      function telemetryExecutionRows() {
+        return currentTelemetryRuns().flatMap((run) => telemetrySequencesForRun(run).map((sequence) => {
+          const turns = (sequence.turns || []).map((turn, index) => ({ ...turn, order_index: index + 1 }));
+          const status = sequence.status || (turns.some((turn) => turn.success === false) ? "error" : "success");
+          const correct = telemetryCorrectValue(sequence.benchmark_correct);
+          const score = firstNumericValue([sequence.benchmark_score]);
+          const questionId = sequence.question_id || (sequence.source === "record" ? "record" : "");
+          const phase = sequence.phase || "overall";
+          const startedAt = sequence.run_started_at || "";
+          const benchmarkId = sequence.benchmark_id || "-";
+          const promptKey = String(sequence.prompt_text || "");
+          const model = sequence.model || sequence.raw_model || "-";
+          const provider = sequence.provider || "-";
+          const baseKey = [
+            model,
+            provider,
+            benchmarkId,
+            phase,
+            promptKey,
+          ].join("|||");
+          const questionKey = [
+            baseKey,
+            questionId,
+          ].join("|||");
+          return {
+            ...sequence,
+            turns,
+            key: [
+              sequence.run_id || "",
+              sequence.record_index ?? "",
+              sequence.question_index ?? "",
+              questionId,
+            ].join("|||"),
+            base_key: baseKey,
+            question_key: questionKey,
+            question_id: questionId,
+            phase,
+            benchmark_id: benchmarkId,
+            benchmark_title: sequence.benchmark_title || "",
+            model,
+            provider,
+            status,
+            correct,
+            score,
+            prompt_key: promptKey,
+            started_at: startedAt,
+            has_prompt_timing: turns.some((turn) => Number.isFinite(Number(turn.prompt_tokens_per_sec))),
+          };
+        })).filter((row) => row.turns.length);
+      }
+
+      function avgTelemetryValue(total, count) {
+        return count > 0 ? total / count : NaN;
+      }
+
+      function averageTelemetryRows(rows, mode) {
+        const grouped = new Map();
+        rows.forEach((row) => {
+          const key = mode === "questions" ? row.question_key : row.base_key;
+          if (!grouped.has(key)) {
+            grouped.set(key, {
+              key,
+              mode,
+              model: row.model || "-",
+              provider: row.provider || "-",
+              benchmark_id: row.benchmark_id || "-",
+              benchmark_title: row.benchmark_title || "",
+              phase: row.phase || "overall",
+              prompt_key: row.prompt_key || "",
+              question_id: mode === "questions" ? (row.question_id || "-") : "",
+              started_at: row.started_at || "",
+              rows: [],
+            });
+          }
+          const group = grouped.get(key);
+          group.rows.push(row);
+          if (String(row.started_at || "") > String(group.started_at || "")) group.started_at = row.started_at || group.started_at;
+        });
+
+        return Array.from(grouped.values()).map((group) => {
+          const executionCount = group.rows.length;
+          const turnStats = new Map();
+          const composition = telemetryEmptyComposition();
+          const toolGrowthSequences = [];
+          let successCount = 0;
+          let correctCount = 0;
+          let correctKnownCount = 0;
+          let scoreSum = 0;
+          let scoreCount = 0;
+          let totalTurns = 0;
+          let totalPrompt = 0;
+          let totalCompletion = 0;
+          let totalTokens = 0;
+          let totalElapsed = 0;
+          let elapsedExecutionCount = 0;
+          let totalTtftSec = 0;
+          let ttftTurns = 0;
+          let totalPostFirstTokenSec = 0;
+          let postFirstTokenTurns = 0;
+          let totalCost = 0;
+          let costCount = 0;
+          let totalPromptLoadSec = 0;
+          let totalPromptForPromptLoad = 0;
+          let promptTimingTurns = 0;
+
+          group.rows.forEach((row) => {
+            if (statusTone(row.status) === "success") successCount += 1;
+            if (row.correct != null) {
+              correctKnownCount += 1;
+              if (row.correct) correctCount += 1;
+            }
+            if (Number.isFinite(Number(row.score))) {
+              scoreSum += Number(row.score);
+              scoreCount += 1;
+            }
+            totalTurns += row.turns.length;
+            const lastTurn = row.turns[row.turns.length - 1];
+            if (lastTurn?.prompt_breakdown) telemetryAccumulateComposition(composition, lastTurn.prompt_breakdown);
+            toolGrowthSequences.push(row.turns);
+
+            let rowElapsed = 0;
+            row.turns.forEach((turn) => {
+              const promptTokens = normalizeNumeric(turn.prompt_tokens) || 0;
+              const cachedTokens = normalizeNumeric(turn.cached_prompt_tokens) || 0;
+              const completionTokens = normalizeNumeric(turn.completion_tokens) || 0;
+              const totalTokenCount = normalizeNumeric(turn.total_tokens) || (promptTokens + completionTokens);
+              totalPrompt += promptTokens;
+              totalCompletion += completionTokens;
+              totalTokens += totalTokenCount;
+              const cost = normalizeNumeric(turn.cost);
+              if (cost != null) {
+                totalCost += cost;
+                costCount += 1;
+              }
+              if (Number.isFinite(Number(turn.elapsed_sec))) {
+                totalElapsed += Number(turn.elapsed_sec);
+                rowElapsed += Number(turn.elapsed_sec);
+              }
+              if (Number.isFinite(Number(turn.ttft_sec))) {
+                totalTtftSec += Number(turn.ttft_sec);
+                ttftTurns += 1;
+              }
+              if (Number.isFinite(Number(turn.post_first_token_sec))) {
+                totalPostFirstTokenSec += Number(turn.post_first_token_sec);
+                postFirstTokenTurns += 1;
+              }
+              if (Number.isFinite(Number(turn.prompt_load_sec))) {
+                totalPromptLoadSec += Number(turn.prompt_load_sec);
+                totalPromptForPromptLoad += promptTokens;
+                promptTimingTurns += 1;
+              }
+
+              const turnIndex = normalizeNumeric(turn.turn_index) || 1;
+              if (!turnStats.has(turnIndex)) {
+                turnStats.set(turnIndex, {
+                  turn_index: turnIndex,
+                  sample_count: 0,
+                  promptSum: 0,
+                  cachedPromptSum: 0,
+                  promptDeltaSum: 0,
+                  promptDeltaCount: 0,
+                  completionSum: 0,
+                  totalSum: 0,
+                  cumulativePromptSum: 0,
+                  cumulativeCompletionSum: 0,
+                  cumulativeTotalSum: 0,
+                  elapsedSum: 0,
+                  elapsedCount: 0,
+                  ttftSum: 0,
+                  ttftCount: 0,
+                  postFirstTokenSecSum: 0,
+                  postFirstTokenSecCount: 0,
+                  promptLoadSecSum: 0,
+                  promptLoadSecCount: 0,
+                  promptTokensWithLoadSum: 0,
+                  promptSpeedSum: 0,
+                  promptSpeedCount: 0,
+                  outputSpeedSum: 0,
+                  outputSpeedCount: 0,
+                  totalSpeedSum: 0,
+                  totalSpeedCount: 0,
+                  costSum: 0,
+                  costCount: 0,
+                });
+              }
+              const stat = turnStats.get(turnIndex);
+              stat.sample_count += 1;
+              stat.promptSum += promptTokens;
+              stat.cachedPromptSum += cachedTokens;
+              if (Number.isFinite(Number(turn.prompt_delta_tokens))) {
+                stat.promptDeltaSum += Number(turn.prompt_delta_tokens);
+                stat.promptDeltaCount += 1;
+              }
+              stat.completionSum += completionTokens;
+              stat.totalSum += totalTokenCount;
+              stat.cumulativePromptSum += normalizeNumeric(turn.cumulative_prompt_tokens) || 0;
+              stat.cumulativeCompletionSum += normalizeNumeric(turn.cumulative_completion_tokens) || 0;
+              stat.cumulativeTotalSum += normalizeNumeric(turn.cumulative_total_tokens) || 0;
+              if (Number.isFinite(Number(turn.elapsed_sec))) {
+                stat.elapsedSum += Number(turn.elapsed_sec);
+                stat.elapsedCount += 1;
+              }
+              if (Number.isFinite(Number(turn.ttft_sec))) {
+                stat.ttftSum += Number(turn.ttft_sec);
+                stat.ttftCount += 1;
+              }
+              if (Number.isFinite(Number(turn.post_first_token_sec))) {
+                stat.postFirstTokenSecSum += Number(turn.post_first_token_sec);
+                stat.postFirstTokenSecCount += 1;
+              }
+              if (Number.isFinite(Number(turn.prompt_load_sec))) {
+                stat.promptLoadSecSum += Number(turn.prompt_load_sec);
+                stat.promptLoadSecCount += 1;
+                stat.promptTokensWithLoadSum += promptTokens;
+              }
+              if (Number.isFinite(Number(turn.prompt_tokens_per_sec))) {
+                stat.promptSpeedSum += Number(turn.prompt_tokens_per_sec);
+                stat.promptSpeedCount += 1;
+              }
+              if (Number.isFinite(Number(turn.completion_tokens_per_sec))) {
+                stat.outputSpeedSum += Number(turn.completion_tokens_per_sec);
+                stat.outputSpeedCount += 1;
+              }
+              if (Number.isFinite(Number(turn.total_tokens_per_sec))) {
+                stat.totalSpeedSum += Number(turn.total_tokens_per_sec);
+                stat.totalSpeedCount += 1;
+              }
+              if (cost != null) {
+                stat.costSum += cost;
+                stat.costCount += 1;
+              }
+            });
+            if (rowElapsed > 0) elapsedExecutionCount += 1;
+          });
+
+          const perTurn = Array.from(turnStats.values())
+            .sort((a, b) => a.turn_index - b.turn_index)
+            .map((stat) => ({
+              turn_index: stat.turn_index,
+              sample_count: stat.sample_count,
+              prompt_tokens: avgTelemetryValue(stat.promptSum, stat.sample_count),
+              cached_prompt_tokens: avgTelemetryValue(stat.cachedPromptSum, stat.sample_count),
+              prompt_delta_tokens: avgTelemetryValue(stat.promptDeltaSum, stat.promptDeltaCount),
+              completion_tokens: avgTelemetryValue(stat.completionSum, stat.sample_count),
+              total_tokens: avgTelemetryValue(stat.totalSum, stat.sample_count),
+              cumulative_prompt_tokens: avgTelemetryValue(stat.cumulativePromptSum, stat.sample_count),
+              cumulative_completion_tokens: avgTelemetryValue(stat.cumulativeCompletionSum, stat.sample_count),
+              cumulative_total_tokens: avgTelemetryValue(stat.cumulativeTotalSum, stat.sample_count),
+              elapsed_sec: avgTelemetryValue(stat.elapsedSum, stat.elapsedCount),
+              ttft_sec: avgTelemetryValue(stat.ttftSum, stat.ttftCount),
+              post_first_token_sec: avgTelemetryValue(stat.postFirstTokenSecSum, stat.postFirstTokenSecCount),
+              prompt_load_sec: avgTelemetryValue(stat.promptLoadSecSum, stat.promptLoadSecCount),
+              prompt_tokens_per_sec: stat.promptLoadSecSum > 0
+                ? stat.promptTokensWithLoadSum / stat.promptLoadSecSum
+                : avgTelemetryValue(stat.promptSpeedSum, stat.promptSpeedCount),
+              completion_tokens_per_sec: stat.elapsedSum > 0
+                ? stat.completionSum / stat.elapsedSum
+                : avgTelemetryValue(stat.outputSpeedSum, stat.outputSpeedCount),
+              total_tokens_per_sec: stat.elapsedSum > 0
+                ? stat.totalSum / stat.elapsedSum
+                : avgTelemetryValue(stat.totalSpeedSum, stat.totalSpeedCount),
+              cost: avgTelemetryValue(stat.costSum, stat.costCount),
+            }));
+
+          const avgElapsedPerExecution = executionCount ? totalElapsed / executionCount : NaN;
+          const avgPromptPerExecution = executionCount ? totalPrompt / executionCount : NaN;
+          const avgCompletionPerExecution = executionCount ? totalCompletion / executionCount : NaN;
+          const avgTotalTokensPerExecution = executionCount ? totalTokens / executionCount : NaN;
+          const avgCostPerExecution = executionCount ? totalCost / executionCount : NaN;
+          const avgTurns = executionCount ? totalTurns / executionCount : NaN;
+          const peakContext = Math.max(...perTurn.map((turn) => normalizeNumeric(turn.prompt_tokens) || 0), 0);
+          const avgComposition = scaleTelemetryComposition(composition, composition.sampleCount || executionCount);
+          return {
+            ...group,
+            executionCount,
+            successCount,
+            correctKnownCount,
+            correctCount,
+            accuracyPct: correctKnownCount ? (correctCount / correctKnownCount) * 100 : (executionCount ? (successCount / executionCount) * 100 : 0),
+            avgScore: avgTelemetryValue(scoreSum, scoreCount),
+            avgTurns,
+            totalTurns,
+            totalPrompt,
+            totalCompletion,
+            totalElapsed,
+            avgElapsedPerExecution,
+            avgPromptPerExecution,
+            avgCompletionPerExecution,
+            avgTotalTokensPerExecution,
+            avgCostPerExecution,
+            avgTtftSec: avgTelemetryValue(totalTtftSec, ttftTurns),
+            avgWaitSecPerExecution: executionCount ? totalTtftSec / executionCount : NaN,
+            avgGenSecPerExecution: executionCount ? totalPostFirstTokenSec / executionCount : NaN,
+            avgPromptLoadSpeed: totalPromptLoadSec > 0 ? totalPromptForPromptLoad / totalPromptLoadSec : NaN,
+            avgOutputSpeed: totalElapsed > 0 ? totalCompletion / totalElapsed : NaN,
+            avgDecodeSpeed: totalPostFirstTokenSec > 0 ? totalCompletion / totalPostFirstTokenSec : NaN,
+            promptTimingTurns,
+            ttftTurns,
+            postFirstTokenTurns,
+            elapsedExecutionCount,
+            costCount,
+            peakContext,
+            composition: avgComposition,
+            toolGrowthSequences,
+            perTurn,
+          };
+        }).sort((a, b) => {
+          if (b.executionCount !== a.executionCount) return b.executionCount - a.executionCount;
+          const modelCmp = String(a.model || "").localeCompare(String(b.model || ""));
+          if (modelCmp !== 0) return modelCmp;
+          const phaseCmp = String(a.phase || "").localeCompare(String(b.phase || ""));
+          if (phaseCmp !== 0) return phaseCmp;
+          return String(a.question_id || "").localeCompare(String(b.question_id || ""), undefined, { numeric: true });
+        });
+      }
+
+      function telemetryModeNav(executionCount, runGroupCount, questionGroupCount) {
+        const modeLabel = state.telemetryMode === "questions"
+          ? `${formatCount(questionGroupCount)} question averages · ${formatCount(executionCount)} executions`
+          : `${formatCount(runGroupCount)} run averages · ${formatCount(executionCount)} executions`;
+        return `
+          <div class="telemetry-toolbar">
+            <div class="sub-nav" aria-label="Telemetry view">
+              <div class="sub-nav-pill ${state.telemetryMode === "runs" ? "active" : ""}" data-telemetry-mode="runs">Run Averages</div>
+              <div class="sub-nav-pill ${state.telemetryMode === "questions" ? "active" : ""}" data-telemetry-mode="questions">Question Averages</div>
+            </div>
+            <div class="telemetry-mode-meta">${escapeHtml(modeLabel)}</div>
+          </div>
+          <details class="telemetry-help">
+            <summary>指標の読み方 / How to read</summary>
+            <div class="telemetry-help-grid">
+              <div><b>Generation speed</b> — モデルが1秒あたりに書き出すトークン数。大きいほど速い (tok/s)</div>
+              <div><b>First-token wait (TTFT)</b> — リクエストから最初の出力が出るまでの待ち時間</div>
+              <div><b>Prompt processing</b> — 入力（これまでの文脈）を1秒あたり読み込む速さ (tok/s)</div>
+              <div><b>Executions</b> — 平均値の母数。こちらのベンチで複数回実行した同一 scope の件数</div>
+              <div><b>Generated tokens</b> — モデルが実際に書き出したトークン量（出力のみ）</div>
+              <div><b>Context size</b> — そのターンでモデルが読み込む文脈の大きさ（入力トークン）</div>
+              <div><b>Prompt Δ</b> — 前ターンから増えた入力トークン量。巨大な tool output や履歴追加の影響を示す</div>
+              <div><b>Size-time scatter</b> — 横軸を平均トークン量、縦軸を平均秒にした散布図。生成量起因か入力文脈起因かを切り分ける</div>
+            </div>
+          </details>
         `;
       }
 
@@ -3117,194 +4001,233 @@ def render_report_html(history_url: str) -> str:
         }).filter(Boolean);
       }
 
-      function renderTelemetry() {
-        const runs = syncTelemetrySelection();
-        const selectNode = document.getElementById("telemetry-run-filter");
-        const metaNode = document.getElementById("telemetry-run-meta");
-        const statsNode = document.getElementById("telemetry-stats");
-        const chartNode = document.getElementById("telemetry-chart");
-        const generatedContextChartNode = document.getElementById("telemetry-generated-context-chart");
-        const inputContextChartNode = document.getElementById("telemetry-input-context-chart");
-        const turnStatsNode = document.getElementById("telemetry-turn-stats");
-        const turnContextChartNode = document.getElementById("telemetry-turn-context-chart");
-        const turnSpeedChartNode = document.getElementById("telemetry-turn-speed-chart");
-        const turnGrowthChartNode = document.getElementById("telemetry-turn-growth-chart");
-        const promptCompositionNode = document.getElementById("telemetry-prompt-composition");
-        const turnBody = document.getElementById("telemetry-turn-body");
-        const spanBody = document.getElementById("telemetry-span-body");
-        const eventBody = document.getElementById("telemetry-event-body");
+      function formatTelemetryPercent(value) {
+        return Number.isFinite(Number(value)) ? `${Number(value).toFixed(1)}%` : "-";
+      }
 
-        if (!runs.length) {
-          selectNode.innerHTML = '<option value="">Run</option>';
-          selectNode.disabled = true;
-          metaNode.textContent = "telemetry 対象の run がありません。";
-          statsNode.innerHTML = "";
-          chartNode.innerHTML = '<div class="detail-empty">history.json に run がありません。</div>';
-          generatedContextChartNode.innerHTML = '<div class="detail-empty">history.json に run がありません。</div>';
-          inputContextChartNode.innerHTML = '<div class="detail-empty">history.json に run がありません。</div>';
-          turnStatsNode.innerHTML = "";
-          turnContextChartNode.innerHTML = '<div class="detail-empty">history.json に run がありません。</div>';
-          turnSpeedChartNode.innerHTML = '<div class="detail-empty">history.json に run がありません。</div>';
-          turnGrowthChartNode.innerHTML = '<div class="detail-empty">history.json に run がありません。</div>';
-          promptCompositionNode.innerHTML = '<div class="detail-empty">prompt breakdown はありません。</div>';
-          turnBody.innerHTML = '<tr><td colspan="10" class="muted">turn usage はありません。</td></tr>';
-          spanBody.innerHTML = '<tr><td colspan="7" class="muted">span はありません。</td></tr>';
-          eventBody.innerHTML = '<tr><td colspan="4" class="muted">event はありません。</td></tr>';
+      function telemetryGroupTitle(row) {
+        if (!row) return "-";
+        if (row.mode === "questions") return row.question_id || "-";
+        return `${row.benchmark_id || "-"} · ${row.phase || "overall"}`;
+      }
+
+      function telemetryGroupSubtitle(row) {
+        const pieces = [row.model, row.provider, row.benchmark_title || row.benchmark_id, row.phase]
+          .filter((value, index, array) => value && array.indexOf(value) === index);
+        return pieces.join(" · ") || "-";
+      }
+
+      function telemetryAverageTableRows(rows, selectedKey, mode) {
+        return rows.map((row) => {
+          const title = mode === "questions" ? (row.question_id || "-") : `${row.benchmark_id || "-"} · ${row.phase || "overall"}`;
+          const subtitle = mode === "questions"
+            ? `${row.benchmark_id || "-"} · ${row.phase || "overall"}`
+            : (row.benchmark_title || row.prompt_key ? truncateText(row.benchmark_title || row.prompt_key, 64) : "-");
+          const correctness = row.correctKnownCount
+            ? `${formatTelemetryPercent(row.accuracyPct)}<br><span class="muted">${formatCount(row.correctCount)} / ${formatCount(row.correctKnownCount)}</span>`
+            : `${formatTelemetryPercent(row.accuracyPct)}<br><span class="muted">${formatCount(row.successCount)} / ${formatCount(row.executionCount)} success</span>`;
+          return `
+            <tr class="catalog-row telemetry-row${row.key === selectedKey ? " active" : ""}" data-telemetry-key="${escapeHtml(row.key)}">
+              <td>
+                <div class="detail-row-title" title="${escapeHtml(title)}">${escapeHtml(title)}</div>
+                <div class="detail-row-meta">${escapeHtml(subtitle)}</div>
+              </td>
+              <td>
+                <div class="detail-row-title">${escapeHtml(row.model)}</div>
+                <div class="detail-row-meta">${escapeHtml(row.provider)}</div>
+              </td>
+              <td>${formatCount(row.executionCount)}</td>
+              <td>${correctness}</td>
+              <td>${formatAveragedCount(row.avgTurns)}<br><span class="muted">${formatTelemetrySpeed(row.avgOutputSpeed)}</span></td>
+            </tr>
+          `;
+        }).join("");
+      }
+
+      function renderTelemetryAverageDetail(selected) {
+        const perTurn = selected.perTurn || [];
+        const totalSampleTurns = perTurn.reduce((sum, turn) => sum + (normalizeNumeric(turn.sample_count) || 0), 0);
+        const correctnessCaption = selected.correctKnownCount
+          ? `${formatCount(selected.correctCount)} / ${formatCount(selected.correctKnownCount)} 正答`
+          : `${formatCount(selected.successCount)} / ${formatCount(selected.executionCount)} success`;
+        const turnTableRows = perTurn.length ? perTurn.map((turn) => `
+          <tr>
+            <td>${escapeHtml(turn.turn_index)}</td>
+            <td>${formatCount(turn.sample_count)}</td>
+            <td>${formatAveragedCount(turn.prompt_tokens)}</td>
+            <td>${formatSignedTokensCompact(turn.prompt_delta_tokens)}</td>
+            <td>${formatAveragedCount(turn.cached_prompt_tokens)}</td>
+            <td>${formatAveragedCount(turn.completion_tokens)}</td>
+            <td>${formatAveragedCount(turn.cumulative_total_tokens)}</td>
+            <td>${Number.isFinite(Number(turn.ttft_sec)) ? formatDuration(turn.ttft_sec) : '<span class="muted">-</span>'}</td>
+            <td>${Number.isFinite(Number(turn.prompt_load_sec)) ? formatDuration(turn.prompt_load_sec) : '<span class="muted">-</span>'}</td>
+            <td>${Number.isFinite(Number(turn.elapsed_sec)) ? formatDuration(turn.elapsed_sec) : '<span class="muted">-</span>'}</td>
+            <td>${formatTelemetrySpeed(turn.completion_tokens_per_sec)}</td>
+          </tr>
+        `).join("") : '<tr><td colspan="11" class="muted">平均化できる turn usage はありません。</td></tr>';
+
+        return `
+          <div class="catalog-detail-header">
+            <div>
+              <h2>${escapeHtml(telemetryGroupTitle(selected))}</h2>
+              <div class="detail-row-meta">${escapeHtml(telemetryGroupSubtitle(selected))}</div>
+            </div>
+            <span class="tag">${formatCount(selected.executionCount)} exec</span>
+          </div>
+          <div class="telemetry-group">
+            <div class="telemetry-group-title">Summary · サマリー</div>
+            <div class="catalog-meta-grid">
+              ${telemetryMetricTile(selected.correctKnownCount ? "Correct" : "Success", formatTelemetryPercent(selected.accuracyPct), correctnessCaption)}
+              ${telemetryMetricTile("Avg model time", formatDuration(selected.avgElapsedPerExecution), "実行1回あたりの平均処理時間")}
+              ${telemetryMetricTile("Avg generated", formatAveragedCount(selected.avgCompletionPerExecution, 0), "実行1回あたりの出力トークン")}
+              ${telemetryMetricTile("Avg turns", formatAveragedCount(selected.avgTurns), "実行1回あたりの model/tool 往復")}
+              ${telemetryMetricTile("Avg cost", Number.isFinite(Number(selected.avgCostPerExecution)) && selected.avgCostPerExecution > 0 ? `$${selected.avgCostPerExecution < 1 ? selected.avgCostPerExecution.toFixed(4) : selected.avgCostPerExecution.toFixed(2)}` : '<span class="muted">$0</span>', "実行1回あたり")}
+            </div>
+          </div>
+          <div class="telemetry-group">
+            <div class="telemetry-group-title">Speed · 速度</div>
+            <div class="catalog-meta-grid">
+              ${telemetryMetricTile("Decode speed", formatTelemetrySpeed(selected.avgDecodeSpeed), "生成中の実トークン/秒（待ち時間を除く）")}
+              ${telemetryMetricTile("Effective speed", formatTelemetrySpeed(selected.avgOutputSpeed), "待ち時間を含む実効トークン/秒")}
+              ${telemetryMetricTile("First-token wait", Number.isFinite(Number(selected.avgTtftSec)) ? formatDuration(selected.avgTtftSec) : '<span class="muted">-</span>', `${formatCount(selected.ttftTurns)} timed turns`)}
+            </div>
+          </div>
+          <div class="telemetry-group">
+            <div class="telemetry-group-title">Per execution · 1実行あたり</div>
+            <div class="catalog-meta-grid">
+              ${telemetryMetricTile("Avg prompt", formatAveragedCount(selected.avgPromptPerExecution, 0), "入力トークンの平均")}
+              ${telemetryMetricTile("Avg total tokens", formatAveragedCount(selected.avgTotalTokensPerExecution, 0), "入力 + 出力")}
+              ${telemetryMetricTile("Peak context", formatTokensCompact(selected.peakContext), "平均turn系列上の最大入力文脈")}
+            </div>
+          </div>
+          ${renderTelemetryTimeBreakdownSection(selected.avgWaitSecPerExecution, selected.avgGenSecPerExecution)}
+          ${renderTelemetryCompositionSection(selected.composition)}
+          ${renderTelemetryToolGrowthSection(selected.toolGrowthSequences)}
+          <div class="telemetry-chart-grid">
+            ${renderTelemetrySizeTimeCharts(perTurn)}
+            ${renderTelemetryLineChart(perTurn, [
+              { key: "prompt_tokens", label: "Context", color: "#4ec9b0" },
+            ], "Context size · 文脈サイズ", (value) => formatTokensCompact(value), "No telemetry points.",
+              "各ターンでモデルが読み込む文脈（入力トークン）の平均サイズ。会話が進み履歴が増えるほど大きくなります。")}
+            ${renderTelemetryLineChart(perTurn, [
+              { key: "prompt_delta_tokens", label: "Prompt Δ", color: "#dcdcaa" },
+            ], "Prompt growth · 入力文脈の増分", (value) => formatSignedTokensCompact(value), "No telemetry points.",
+              "前のターンから入力文脈がどれだけ増えたかの平均。大きな正のスパイクは巨大な tool output や履歴追加を示します。")}
+            ${renderTelemetryLineChart(perTurn, [
+              { key: "completion_tokens", label: "Generated", color: "#569cd6" },
+            ], "Generated tokens · 生成量", (value) => formatTokensCompact(value), "No telemetry points.",
+              "各ターンでモデルが書き出した出力トークン量の平均。生成速度や生成時間とあわせて、遅い turn が長文生成によるものかを見ます。")}
+            ${renderTelemetryLineChart(perTurn, [
+              { key: "completion_tokens_per_sec", label: "Generation speed", color: "#c586c0" },
+            ], "Generation speed · 生成速度", (value) => Number.isFinite(Number(value)) ? Number(value).toFixed(1) : "-", "No telemetry points.",
+              "各ターンでモデルが1秒あたりに書き出したトークン数 (tok/s) の平均。高く安定しているほど速い。")}
+            ${renderTelemetryLineChart(perTurn, [
+              { key: "ttft_sec", label: "First-token wait", color: "#ce9178" },
+            ], "First-token wait · 初回応答待ち", (value) => Number.isFinite(Number(value)) ? formatDuration(Number(value)) : "-", "TTFTはこの選択では記録されていません。",
+              "各ターンで最初の出力トークンが返るまでの平均待ち時間。低いほど反応が速い。")}
+            <div class="telemetry-chart-note">プロンプト速度の計測: ${formatCount(selected.promptTimingTurns)} / ${formatCount(totalSampleTurns)} turn samples</div>
+          </div>
+          <div class="catalog-section">
+            <div class="catalog-section-title">Averaged Turn Breakdown</div>
+            <div class="telemetry-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Turn</th>
+                    <th>Samples</th>
+                    <th>Avg Prompt</th>
+                    <th>Avg Prompt Δ</th>
+                    <th>Avg Cached</th>
+                    <th>Avg Completion</th>
+                    <th>Avg Cumulative</th>
+                    <th>Avg TTFT</th>
+                    <th>Prompt Load</th>
+                    <th>Avg Elapsed</th>
+                    <th>Avg Gen Speed</th>
+                  </tr>
+                </thead>
+                <tbody>${turnTableRows}</tbody>
+              </table>
+            </div>
+          </div>
+        `;
+      }
+
+      function bindTelemetryRenderedControls() {
+        const root = document.getElementById("telemetry-content");
+        if (!root) return;
+        root.querySelectorAll("[data-telemetry-mode]").forEach((pill) => {
+          pill.addEventListener("click", () => {
+            const nextMode = pill.dataset.telemetryMode === "questions" ? "questions" : "runs";
+            if (state.telemetryMode === nextMode) return;
+            state.telemetryMode = nextMode;
+            renderTelemetry();
+          });
+        });
+        root.querySelectorAll("[data-telemetry-key]").forEach((row) => {
+          row.addEventListener("click", () => {
+            if (state.telemetryMode === "questions") {
+              state.telemetryQuestionKey = row.dataset.telemetryKey || "";
+            } else {
+              state.telemetryRunId = row.dataset.telemetryKey || "";
+            }
+            renderTelemetry();
+          });
+        });
+      }
+
+      function renderTelemetry() {
+        const root = document.getElementById("telemetry-content");
+        if (!root) return;
+        const executionRows = telemetryExecutionRows();
+        const runRows = averageTelemetryRows(executionRows, "runs");
+        const questionRows = averageTelemetryRows(executionRows, "questions");
+        const activeRows = state.telemetryMode === "questions" ? questionRows : runRows;
+        const selectedKey = state.telemetryMode === "questions" ? state.telemetryQuestionKey : state.telemetryRunId;
+
+        if (!executionRows.length) {
+          state.telemetryRunId = "";
+          state.telemetryQuestionKey = "";
+          root.innerHTML = `
+            ${telemetryModeNav(0, 0, 0)}
+            <div class="detail-empty">No per-turn telemetry in the current scope.</div>
+          `;
+          bindTelemetryRenderedControls();
           return;
         }
 
-        selectNode.disabled = false;
-        selectNode.innerHTML = runs.map((run) => `
-          <option value="${escapeHtml(run.run_id || "")}">${escapeHtml(telemetryRunLabel(run))}</option>
-        `).join("");
-        selectNode.value = state.telemetryRunId;
-
-        const run = selectedTelemetryRun();
-        const telemetry = telemetryForRun(run);
-        const spans = (Array.isArray(telemetry.spans) ? telemetry.spans : []).map((span) => normalizeTelemetrySpan(span));
-        const attemptSpans = spans.filter((span) => span.name === "attempt");
-        const questionSpans = spans.filter((span) => span.name === "question");
-        const resourceSummary = telemetry.resources?.summary || {};
-        const statusCounts = spans.reduce((counts, span) => {
-          const status = String(span.status || "unknown");
-          counts[status] = (counts[status] || 0) + 1;
-          return counts;
-        }, {});
-
-        metaNode.textContent = `${spans.length} spans · ${telemetry.source || "telemetry"} · run ${run?.run_id || "-"}`;
-        statsNode.innerHTML = [
-          ["Duration", formatMs(telemetry.duration_ms), `${attemptSpans.length} attempts / ${questionSpans.length} questions`],
-          ["CPU User", formatMs(resourceSummary.cpu_user_delta_ms), "process delta"],
-          ["CPU System", formatMs(resourceSummary.cpu_system_delta_ms), "process delta"],
-          ["Peak RSS", formatBytes(resourceSummary.peak_rss_bytes), `${resourceSummary.sample_count || 0} samples`],
-          ["Status", Object.entries(statusCounts).map(([key, value]) => `${key}:${value}`).join(" · ") || "-", "span outcomes"],
-        ].map(([label, value, extra]) => `
-          <div class="stat">
-            <div class="label">${escapeHtml(label)}</div>
-            <div class="value">${escapeHtml(value)}</div>
-            <div class="extra">${escapeHtml(extra)}</div>
+        let nextSelectedKey = selectedKey;
+        if (!activeRows.some((row) => row.key === nextSelectedKey)) {
+          nextSelectedKey = (activeRows.find((row) => row.promptTimingTurns > 0) || activeRows[0])?.key || "";
+          if (state.telemetryMode === "questions") state.telemetryQuestionKey = nextSelectedKey;
+          else state.telemetryRunId = nextSelectedKey;
+        }
+        const selected = activeRows.find((row) => row.key === nextSelectedKey) || activeRows[0];
+        const tableRows = telemetryAverageTableRows(activeRows, selected?.key || "", state.telemetryMode);
+        const firstColumn = state.telemetryMode === "questions" ? "Question" : "Scope";
+        root.innerHTML = `
+          ${telemetryModeNav(executionRows.length, runRows.length, questionRows.length)}
+          <div class="catalog-layout telemetry-layout">
+            <div class="catalog-list-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>${firstColumn}</th>
+                    <th>Model</th>
+                    <th>Executions</th>
+                    <th>${state.telemetryMode === "questions" ? "Correct" : "Quality"}</th>
+                    <th>Avg Turns</th>
+                  </tr>
+                </thead>
+                <tbody>${tableRows}</tbody>
+              </table>
+            </div>
+            <div class="catalog-detail">
+              ${selected ? renderTelemetryAverageDetail(selected) : '<div class="detail-empty">平均表示できる telemetry がありません。</div>'}
+            </div>
           </div>
-        `).join("");
-        chartNode.innerHTML = renderTelemetryChartSvg(telemetry);
-        generatedContextChartNode.innerHTML = renderTelemetryScatterSvg(
-          tokenTimePoints(telemetry, "generated"),
-          {
-            xLabel: "generated tokens",
-            yLabel: "generation time",
-            emptyText: "生成 context と時間を描画できる token/latency がありません。",
-          },
-        );
-        inputContextChartNode.innerHTML = renderTelemetryScatterSvg(
-          tokenTimePoints(telemetry, "input"),
-          {
-            xLabel: "input context tokens",
-            yLabel: "prompt time",
-            emptyText: "入力 context と時間を描画できる token/latency がありません。",
-          },
-        );
-
-        const turns = turnUsageForRun(run);
-        const successTurns = turns.filter((turn) => turn.success !== false);
-        const failedTurns = turns.length - successTurns.length;
-        const totalPromptTokens = successTurns.reduce((sum, turn) => sum + (normalizeNumeric(turn.prompt_tokens) || 0), 0);
-        const totalCompletionTokens = successTurns.reduce((sum, turn) => sum + (normalizeNumeric(turn.completion_tokens) || 0), 0);
-        const elapsedValues = turns.map((turn) => normalizeNumeric(turn.elapsed_sec)).filter((value) => value != null && value >= 0);
-        const avgElapsedSec = elapsedValues.length ? elapsedValues.reduce((sum, value) => sum + value, 0) / elapsedValues.length : null;
-        const speedValues = successTurns.map((turn) => normalizeNumeric(turn.completion_tokens_per_sec)).filter((value) => value != null && value >= 0);
-        const avgGenSpeed = speedValues.length ? speedValues.reduce((sum, value) => sum + value, 0) / speedValues.length : null;
-        turnStatsNode.innerHTML = [
-          ["LLM Calls", formatNumber(turns.length, 0), failedTurns ? `${failedTurns} failed` : "all successful"],
-          ["Prompt Tokens", formatNumber(totalPromptTokens, 0), "sum of successful turns"],
-          ["Completion Tokens", formatNumber(totalCompletionTokens, 0), "sum of successful turns"],
-          ["Avg Elapsed", avgElapsedSec != null ? formatTurnSeconds(avgElapsedSec) : "N/A", `${elapsedValues.length} timed turns`],
-          ["Avg Gen Speed", avgGenSpeed != null ? formatTps(avgGenSpeed) : "N/A", "completion tokens / elapsed"],
-        ].map(([label, value, extra]) => `
-          <div class="stat">
-            <div class="label">${escapeHtml(label)}</div>
-            <div class="value">${escapeHtml(String(value))}</div>
-            <div class="extra">${escapeHtml(extra)}</div>
-          </div>
-        `).join("");
-        turnContextChartNode.innerHTML = renderTelemetryTurnLineSvg(
-          turns,
-          [
-            { key: "prompt_tokens", label: "Prompt", color: "#4ec9b0" },
-            { key: "completion_tokens", label: "Completion", color: "#c586c0" },
-          ],
-          {
-            title: "Context Size by Turn",
-            yFormatter: (value) => formatNumber(value, 0),
-            emptyText: "turn ごとの token 数がありません。",
-          },
-        );
-        turnSpeedChartNode.innerHTML = renderTelemetryTurnLineSvg(
-          turns,
-          [
-            { key: "completion_tokens_per_sec", label: "Generation", color: "#ce9178" },
-            { key: "prompt_tokens_per_sec", label: "Prompt load", color: "#dcdcaa" },
-          ],
-          {
-            title: "Token Speed by Turn",
-            yFormatter: (value) => formatTps(value),
-            emptyText: "turn ごとの速度情報がありません。",
-          },
-        );
-        turnGrowthChartNode.innerHTML = renderTelemetryScatterSvg(
-          turnInputGrowthTimePoints(turns),
-          {
-            xLabel: "prompt Δ tokens",
-            yLabel: "prompt/TTFT time",
-            emptyText: "入力文脈の増分と時間を描画できる turn がありません。",
-          },
-        );
-        promptCompositionNode.innerHTML = renderTelemetryPromptComposition(turns);
-        turnBody.innerHTML = turns.length ? turns.slice(0, 240).map((turn) => `
-          <tr>
-            <td>
-              <div class="detail-row-title">${escapeHtml(telemetryTurnScopeText(turn))}</div>
-              <div class="detail-row-meta">${escapeHtml(turn.source || "-")}</div>
-            </td>
-            <td>${escapeHtml(turn.turn_index)}</td>
-            <td>${formatNumber(turn.prompt_tokens, 0)}</td>
-            <td>${formatNumber(turn.prompt_delta_tokens, 0)}</td>
-            <td>${formatNumber(turn.cached_prompt_tokens, 0)}</td>
-            <td>${formatNumber(turn.completion_tokens, 0)}</td>
-            <td>${formatNumber(turn.cumulative_total_tokens, 0)}</td>
-            <td>${turn.ttft_sec != null ? formatTurnSeconds(turn.ttft_sec) : '<span class="muted">N/A</span>'}</td>
-            <td>${turn.elapsed_sec != null ? formatTurnSeconds(turn.elapsed_sec) : '<span class="muted">N/A</span>'}</td>
-            <td>${turn.completion_tokens_per_sec != null ? formatTps(turn.completion_tokens_per_sec) : '<span class="muted">N/A</span>'}</td>
-          </tr>
-        `).join("") : '<tr><td colspan="10" class="muted">turn usage はありません。</td></tr>';
-
-        spanBody.innerHTML = spans.length ? spans.map((span) => {
-          const metrics = span.metrics || {};
-          return `
-            <tr>
-              <td>
-                <div class="detail-row-title">${escapeHtml(span.name)}</div>
-                <div class="detail-row-meta">${escapeHtml(scopeText(span))}</div>
-              </td>
-              <td>${renderStatusPill(span.status)}</td>
-              <td>${formatMs(span.duration_ms)}</td>
-              <td>${formatMs(metrics.total_latency_ms)}</td>
-              <td>${formatMs(metrics.ttft_ms)}</td>
-              <td>${formatTps(metrics.decode_tps)}</td>
-              <td>${formatNumber(metrics.tool_call_count, 0)}</td>
-            </tr>
-          `;
-        }).join("") : '<tr><td colspan="7" class="muted">span はありません。</td></tr>';
-
-        const events = (Array.isArray(telemetry.events) ? telemetry.events : [])
-          .filter((event) => event && typeof event === "object")
-          .sort((left, right) => (normalizeNumeric(left.offset_ms) || 0) - (normalizeNumeric(right.offset_ms) || 0));
-        eventBody.innerHTML = events.length ? events.slice(0, 120).map((event) => `
-          <tr>
-            <td>${formatMs(normalizeNumeric(event.offset_ms) || 0)}</td>
-            <td>${escapeHtml(event.name || "-")}</td>
-            <td>${event.status ? renderStatusPill(event.status) : '<span class="muted">-</span>'}</td>
-            <td>${escapeHtml(scopeText(event))}</td>
-          </tr>
-        `).join("") : '<tr><td colspan="4" class="muted">event はありません。</td></tr>';
+        `;
+        bindTelemetryRenderedControls();
       }
 
       function resolveLogUrl(logPath) {
@@ -4675,7 +5598,9 @@ def render_report_html(history_url: str) -> str:
           state.selectedErrorSignature = "";
           state.selectedErrorEventKey = "";
           state.selectedRecordKey = "";
+          state.telemetryMode = "runs";
           state.telemetryRunId = "";
+          state.telemetryQuestionKey = "";
           refreshCurrentView();
           renderAll();
         });
@@ -4744,10 +5669,7 @@ def render_report_html(history_url: str) -> str:
       }
 
       function bindTelemetryControls() {
-        document.getElementById("telemetry-run-filter").addEventListener("change", (event) => {
-          state.telemetryRunId = event.target.value;
-          renderTelemetry();
-        });
+        // Telemetry controls are rendered dynamically inside renderTelemetry().
       }
 
     function bindCompareControls() {
@@ -4793,7 +5715,9 @@ def render_report_html(history_url: str) -> str:
         state.selectedErrorSignature = "";
         state.selectedErrorEventKey = "";
         state.selectedRecordKey = "";
+        state.telemetryMode = "runs";
         state.telemetryRunId = "";
+        state.telemetryQuestionKey = "";
         state.rawLogCache = {};
         renderAll();
       }
