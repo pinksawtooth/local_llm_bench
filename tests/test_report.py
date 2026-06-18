@@ -63,6 +63,8 @@ class ReportTests(unittest.TestCase):
         self.assertIn("Per-turn LLM Usage", original_text)
         self.assertIn("Context Size by Turn", original_text)
         self.assertIn("Token Speed by Turn", original_text)
+        self.assertIn("Input Growth vs Time", original_text)
+        self.assertIn("turnInputGrowthTimePoints", original_text)
         self.assertIn("renderTelemetryPromptComposition", original_text)
         self.assertIn("turnUsageForRun", original_text)
         self.assertIn("renderTelemetry", original_text)

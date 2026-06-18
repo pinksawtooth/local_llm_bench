@@ -106,7 +106,7 @@ LM Studio / Unsloth Studio から取得できる場合は、各 run に `display
 
 `Compare` タブでは、任意の 2 モデルを選んで Warm TTFT / Latency / Decode Speed などの主要指標を横並びで比較できます。
 
-各 run には `telemetry` ブロックも保存されます。cold/warm の attempt、Docker Task の question、cooldown を span として記録し、wall time、LLM latency、TTFT、decode speed、token 数、process CPU/RSS sample を後から追えるようにしています。各 record / question result には `turn_usage[]` も保存され、turn ごとの `prompt_tokens` / `completion_tokens` / `cumulative_total_tokens` / `elapsed_sec` / `completion_tokens_per_sec` と、文字数ベース概算の `prompt_breakdown` を確認できます。Viewer の `Telemetry` タブでは run 単位の timeline、生成 context size と generation time、入力 context size と prompt time、per-turn context/速度、prompt composition、event log、span 一覧を確認できます。古い履歴に `telemetry` や `turn_usage` が無い場合も、既存の `records` や Docker trace から可能な範囲で復元して表示します。
+各 run には `telemetry` ブロックも保存されます。cold/warm の attempt、Docker Task の question、cooldown を span として記録し、wall time、LLM latency、TTFT、decode speed、token 数、process CPU/RSS sample を後から追えるようにしています。各 record / question result には `turn_usage[]` も保存され、turn ごとの `prompt_tokens` / `completion_tokens` / `cumulative_total_tokens` / `elapsed_sec` / `completion_tokens_per_sec` と、文字数ベース概算の `prompt_breakdown` を確認できます。Viewer の `Telemetry` タブでは run 単位の timeline、生成 context size と generation time、入力 context size と prompt time、入力文脈の増分と prompt/TTFT time、per-turn context/速度、prompt composition、event log、span 一覧を確認できます。古い履歴に `telemetry` や `turn_usage` が無い場合も、既存の `records` や Docker trace から可能な範囲で復元して表示します。
 
 ## テスト
 

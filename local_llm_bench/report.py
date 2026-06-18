@@ -1141,6 +1141,10 @@ def render_report_html(history_url: str) -> str:
           <div class="telemetry-turn-grid">
             <div class="telemetry-turn-chart" id="telemetry-turn-context-chart"></div>
             <div class="telemetry-turn-chart" id="telemetry-turn-speed-chart"></div>
+            <div class="telemetry-turn-chart">
+              <h3 class="detail-section-heading">Input Growth vs Time</h3>
+              <div id="telemetry-turn-growth-chart"></div>
+            </div>
           </div>
           <div class="detail-section" id="telemetry-prompt-composition" style="margin-top: 16px;"></div>
           <div class="telemetry-table-wrap" style="margin-top: 16px; max-height: 420px;">
@@ -2866,7 +2870,7 @@ def render_report_html(history_url: str) -> str:
           cumulativeCompletion = rawCumulativeCompletion != null && rawCumulativeCompletion > 0
             ? rawCumulativeCompletion
             : cumulativeCompletion + completionTokens;
-          const promptDelta = previousPrompt == null ? promptTokens : promptTokens - previousPrompt;
+          const promptDelta = previousPrompt == null ? 0 : promptTokens - previousPrompt;
           previousPrompt = promptTokens;
           const elapsedSec = normalizeNumeric(turn.elapsed_sec);
           const promptLoadSec = firstNumericValue([turn.prefill_sec, turn.ttft_sec]);
@@ -3094,6 +3098,25 @@ def render_report_html(history_url: str) -> str:
         `;
       }
 
+      function turnInputGrowthTimePoints(turns) {
+        return (Array.isArray(turns) ? turns : []).map((turn) => {
+          const growthTokens = Math.max(0, normalizeNumeric(turn.prompt_delta_tokens) || 0);
+          const inputTimeSec = firstNumericValue([
+            turn.prompt_load_sec,
+            turn.ttft_sec,
+            turn.elapsed_sec,
+          ]);
+          if (!(growthTokens > 0) || inputTimeSec == null) return null;
+          return {
+            x: growthTokens,
+            y: inputTimeSec * 1000.0,
+            status: turn.status,
+            label: `${telemetryTurnScopeText(turn)} · turn ${turn.turn_index}`,
+            span_name: "turn",
+          };
+        }).filter(Boolean);
+      }
+
       function renderTelemetry() {
         const runs = syncTelemetrySelection();
         const selectNode = document.getElementById("telemetry-run-filter");
@@ -3105,6 +3128,7 @@ def render_report_html(history_url: str) -> str:
         const turnStatsNode = document.getElementById("telemetry-turn-stats");
         const turnContextChartNode = document.getElementById("telemetry-turn-context-chart");
         const turnSpeedChartNode = document.getElementById("telemetry-turn-speed-chart");
+        const turnGrowthChartNode = document.getElementById("telemetry-turn-growth-chart");
         const promptCompositionNode = document.getElementById("telemetry-prompt-composition");
         const turnBody = document.getElementById("telemetry-turn-body");
         const spanBody = document.getElementById("telemetry-span-body");
@@ -3121,6 +3145,7 @@ def render_report_html(history_url: str) -> str:
           turnStatsNode.innerHTML = "";
           turnContextChartNode.innerHTML = '<div class="detail-empty">history.json に run がありません。</div>';
           turnSpeedChartNode.innerHTML = '<div class="detail-empty">history.json に run がありません。</div>';
+          turnGrowthChartNode.innerHTML = '<div class="detail-empty">history.json に run がありません。</div>';
           promptCompositionNode.innerHTML = '<div class="detail-empty">prompt breakdown はありません。</div>';
           turnBody.innerHTML = '<tr><td colspan="10" class="muted">turn usage はありません。</td></tr>';
           spanBody.innerHTML = '<tr><td colspan="7" class="muted">span はありません。</td></tr>';
@@ -3222,6 +3247,14 @@ def render_report_html(history_url: str) -> str:
             title: "Token Speed by Turn",
             yFormatter: (value) => formatTps(value),
             emptyText: "turn ごとの速度情報がありません。",
+          },
+        );
+        turnGrowthChartNode.innerHTML = renderTelemetryScatterSvg(
+          turnInputGrowthTimePoints(turns),
+          {
+            xLabel: "prompt Δ tokens",
+            yLabel: "prompt/TTFT time",
+            emptyText: "入力文脈の増分と時間を描画できる turn がありません。",
           },
         );
         promptCompositionNode.innerHTML = renderTelemetryPromptComposition(turns);
