@@ -758,6 +758,145 @@
       font-size: 13px;
       line-height: 1.7;
     }
+    .telemetry-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(360px, 0.9fr);
+      gap: 16px;
+      align-items: start;
+    }
+    .telemetry-chart {
+      min-height: 320px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: rgba(0,0,0,0.18);
+      overflow-x: auto;
+      padding: 12px;
+    }
+    .telemetry-chart svg {
+      display: block;
+      width: 100%;
+      min-width: 720px;
+      height: auto;
+      font-family: var(--mono);
+    }
+    .telemetry-axis {
+      stroke: rgba(255,255,255,0.16);
+      stroke-width: 1;
+    }
+    .telemetry-label {
+      fill: var(--muted);
+      font-size: 11px;
+    }
+    .telemetry-bar-success { fill: rgba(78, 201, 176, 0.72); }
+    .telemetry-bar-error { fill: rgba(241, 76, 76, 0.72); }
+    .telemetry-bar-timeout { fill: rgba(220, 220, 170, 0.76); }
+    .telemetry-bar-other { fill: rgba(0, 122, 204, 0.72); }
+    .telemetry-table-wrap {
+      max-height: 360px;
+      overflow: auto;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: rgba(0,0,0,0.12);
+    }
+    .telemetry-table-wrap th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: var(--bg-secondary);
+    }
+    .telemetry-context-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+      margin-top: 16px;
+    }
+    .telemetry-scatter {
+      min-height: 300px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: rgba(0,0,0,0.16);
+      overflow-x: auto;
+      padding: 12px;
+    }
+    .telemetry-scatter svg {
+      display: block;
+      width: 100%;
+      min-width: 520px;
+      height: auto;
+      font-family: var(--mono);
+    }
+    .telemetry-dot-success { fill: var(--good); stroke: rgba(255,255,255,0.55); }
+    .telemetry-dot-error { fill: var(--bad); stroke: rgba(255,255,255,0.55); }
+    .telemetry-dot-timeout { fill: var(--gold); stroke: rgba(255,255,255,0.55); }
+    .telemetry-dot-other { fill: var(--accent-2); stroke: rgba(255,255,255,0.55); }
+    .telemetry-fit-line {
+      stroke: var(--silver);
+      stroke-width: 2;
+      stroke-dasharray: 5 5;
+      opacity: 0.82;
+    }
+    .telemetry-turn-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+      margin-top: 16px;
+    }
+    .telemetry-turn-chart {
+      min-height: 280px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: rgba(0,0,0,0.16);
+      overflow-x: auto;
+      padding: 12px;
+    }
+    .telemetry-turn-chart svg {
+      display: block;
+      width: 100%;
+      min-width: 520px;
+      height: auto;
+      font-family: var(--mono);
+    }
+    .telemetry-line {
+      fill: none;
+      stroke-width: 2.2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .telemetry-point {
+      stroke: rgba(255,255,255,0.5);
+      stroke-width: 1;
+    }
+    .telemetry-stack-bar {
+      height: 12px;
+      display: flex;
+      overflow: hidden;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.09);
+      background: rgba(255,255,255,0.05);
+      margin: 8px 0 10px;
+    }
+    .telemetry-stack-seg {
+      min-width: 2px;
+    }
+    .telemetry-stack-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 12px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .telemetry-stack-legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .telemetry-swatch {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      box-shadow: 0 0 0 1px rgba(255,255,255,0.18);
+    }
     .status-bar {
       display: flex;
       justify-content: space-between;
@@ -795,6 +934,9 @@
       .detail-kv-table th,
       .detail-kv-table td { display: block; width: auto; }
       .detail-kv-table td { margin-top: 2px; }
+      .telemetry-layout,
+      .telemetry-context-grid,
+      .telemetry-turn-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -841,6 +983,7 @@
         <button class="tab" data-tab="compare">Compare</button>
         <button class="tab" data-tab="coldwarm">Cold vs Warm</button>
         <button class="tab" data-tab="stability">Stability</button>
+        <button class="tab" data-tab="telemetry">Telemetry</button>
         <button class="tab" data-tab="errors">Error Analysis</button>
         <button class="tab" data-tab="details">Run Details</button>
       </div>
@@ -944,6 +1087,91 @@
         <tbody id="stability-body"></tbody>
         </table>
         <div class="table-note">CV は標準偏差 / 平均です。小さいほどばらつきが少なく、安定しています。</div>
+      </div>
+
+      <div id="telemetry-panel" class="card" style="display:none;">
+        <div class="toolbar">
+          <select id="telemetry-run-filter"></select>
+          <div class="filter-meta" id="telemetry-run-meta"></div>
+        </div>
+        <div class="stat-grid" id="telemetry-stats"></div>
+        <div class="telemetry-layout">
+          <section class="detail-section">
+            <h3 class="detail-section-heading">Performance Timeline</h3>
+            <div class="telemetry-chart" id="telemetry-chart"></div>
+          </section>
+          <section class="detail-section">
+            <h3 class="detail-section-heading">Event Log</h3>
+            <div class="telemetry-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Offset</th>
+                    <th>Event</th>
+                    <th>Status</th>
+                    <th>Scope</th>
+                  </tr>
+                </thead>
+                <tbody id="telemetry-event-body"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+        <div class="telemetry-context-grid">
+          <section class="detail-section">
+            <h3 class="detail-section-heading">Generated Context vs Time</h3>
+            <div class="telemetry-scatter" id="telemetry-generated-context-chart"></div>
+          </section>
+          <section class="detail-section">
+            <h3 class="detail-section-heading">Input Context vs Time</h3>
+            <div class="telemetry-scatter" id="telemetry-input-context-chart"></div>
+          </section>
+        </div>
+        <section class="detail-section" style="margin-top: 16px;">
+          <h3 class="detail-section-heading">Per-turn LLM Usage</h3>
+          <div class="stat-grid" id="telemetry-turn-stats"></div>
+          <div class="telemetry-turn-grid">
+            <div class="telemetry-turn-chart" id="telemetry-turn-context-chart"></div>
+            <div class="telemetry-turn-chart" id="telemetry-turn-speed-chart"></div>
+          </div>
+          <div class="detail-section" id="telemetry-prompt-composition" style="margin-top: 16px;"></div>
+          <div class="telemetry-table-wrap" style="margin-top: 16px; max-height: 420px;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Scope</th>
+                  <th>Turn</th>
+                  <th>Prompt</th>
+                  <th>Prompt Δ</th>
+                  <th>Cached</th>
+                  <th>Completion</th>
+                  <th>Cumulative</th>
+                  <th>TTFT</th>
+                  <th>Elapsed</th>
+                  <th>Gen Speed</th>
+                </tr>
+              </thead>
+              <tbody id="telemetry-turn-body"></tbody>
+            </table>
+          </div>
+        </section>
+        <section class="detail-section" style="margin-top: 16px;">
+          <h3 class="detail-section-heading">Spans</h3>
+          <table id="telemetry-span-table">
+            <thead>
+              <tr>
+                <th>Span</th>
+                <th>Status</th>
+                <th>Wall</th>
+                <th>Model Latency</th>
+                <th>TTFT</th>
+                <th>Decode</th>
+                <th>Tools</th>
+              </tr>
+            </thead>
+            <tbody id="telemetry-span-body"></tbody>
+          </table>
+        </section>
       </div>
 
       <div id="errors-panel" class="card" style="display:none;">
@@ -1102,6 +1330,7 @@
         selectedErrorSignature: "",
         selectedErrorEventKey: "",
         selectedRecordKey: "",
+        telemetryRunId: "",
         selectedPrompt: "",
         rawLogCache: {},
       };
@@ -1121,6 +1350,7 @@
         compare: document.getElementById("compare-panel"),
         coldwarm: document.getElementById("coldwarm-panel"),
         stability: document.getElementById("stability-panel"),
+        telemetry: document.getElementById("telemetry-panel"),
         errors: document.getElementById("errors-panel"),
         details: document.getElementById("details-panel"),
       };
@@ -2112,6 +2342,928 @@
 
       function currentModelCatalog() {
         return currentView().model_catalog || {};
+      }
+
+      function compactTelemetryMetrics(entry) {
+        const fields = [
+          "ttft_ms",
+          "total_latency_ms",
+          "completion_window_ms",
+          "attempt_wall_ms",
+          "host_wall_ms",
+          "prompt_latency_ms",
+          "initial_prompt_latency_ms",
+          "conversation_prompt_latency_ms",
+          "prompt_tokens",
+          "initial_prompt_tokens",
+          "conversation_prompt_tokens",
+          "completion_tokens",
+          "total_tokens",
+          "decode_tps",
+          "end_to_end_tps",
+          "approx_prompt_tps",
+          "initial_prompt_tps",
+          "conversation_prompt_tps",
+          "benchmark_score",
+          "benchmark_correct_count",
+          "benchmark_incorrect_count",
+          "benchmark_error_count",
+          "tool_call_count",
+        ];
+        const metrics = {};
+        fields.forEach((field) => {
+          const value = normalizeNumeric(entry?.[field]);
+          if (value != null) metrics[field] = value;
+        });
+        return metrics;
+      }
+
+      function scopeText(item) {
+        const pieces = [];
+        if (item.phase) pieces.push(`${item.phase} #${item.iteration ?? "-"}`);
+        if (item.question_id) pieces.push(String(item.question_id));
+        if (item.benchmark_id) pieces.push(String(item.benchmark_id));
+        return pieces.join(" · ") || "-";
+      }
+
+      function normalizeTelemetrySpan(rawSpan) {
+        const span = rawSpan && typeof rawSpan === "object" ? { ...rawSpan } : {};
+        const start = normalizeNumeric(span.start_offset_ms) ?? normalizeNumeric(span.offset_ms) ?? 0;
+        const duration = normalizeNumeric(span.duration_ms) ?? 0;
+        const end = normalizeNumeric(span.end_offset_ms) ?? (start + duration);
+        return {
+          ...span,
+          name: String(span.name || "span"),
+          status: String(span.status || "unknown"),
+          start_offset_ms: start,
+          end_offset_ms: end,
+          duration_ms: Math.max(end - start, duration, 0),
+          metrics: span.metrics && typeof span.metrics === "object" ? span.metrics : {},
+        };
+      }
+
+      function fallbackTelemetryFromRun(run) {
+        const records = Array.isArray(run?.records) ? run.records : [];
+        let cursor = 0;
+        const spans = [];
+        const events = [{
+          name: "run_start",
+          timestamp: run?.started_at || "",
+          offset_ms: 0,
+        }];
+        records.forEach((record) => {
+          const metrics = compactTelemetryMetrics(record);
+          const questionResults = Array.isArray(record?.question_results)
+            ? record.question_results.filter((item) => item && typeof item === "object")
+            : [];
+          const questionDurations = questionResults.map((item) => firstNumericValue([
+            item.host_wall_ms,
+            item.total_latency_ms,
+            item.completion_window_ms,
+          ])).filter((value) => value != null);
+          const questionDurationTotal = questionDurations.reduce((sum, value) => sum + value, 0);
+          const duration = normalizeNumeric(record.attempt_wall_ms)
+            ?? normalizeNumeric(record.total_latency_ms)
+            ?? normalizeNumeric(record.completion_window_ms)
+            ?? (questionDurationTotal > 0 ? questionDurationTotal : null)
+            ?? 0;
+          const span = {
+            name: "attempt",
+            phase: record.phase,
+            iteration: record.iteration,
+            status: record.status || "unknown",
+            start_offset_ms: cursor,
+            end_offset_ms: cursor + duration,
+            duration_ms: duration,
+            metrics,
+          };
+          spans.push(span);
+          events.push({
+            name: "attempt_start",
+            offset_ms: cursor,
+            phase: record.phase,
+            iteration: record.iteration,
+          });
+          let questionCursor = cursor;
+          questionResults.forEach((questionResult, questionIndex) => {
+            const questionMetrics = compactTelemetryMetrics(questionResult);
+            const questionDuration = firstNumericValue([
+              questionResult.host_wall_ms,
+              questionResult.total_latency_ms,
+              questionResult.completion_window_ms,
+            ]) ?? (questionResults.length ? duration / questionResults.length : 0);
+            const questionSpan = {
+              name: "question",
+              phase: record.phase,
+              iteration: record.iteration,
+              question_id: questionResult.question_id || `q${questionIndex + 1}`,
+              status: questionResult.status || record.status || "unknown",
+              start_offset_ms: questionCursor,
+              end_offset_ms: questionCursor + questionDuration,
+              duration_ms: questionDuration,
+              metrics: questionMetrics,
+            };
+            spans.push(questionSpan);
+            events.push({
+              name: "question_start",
+              offset_ms: questionCursor,
+              phase: record.phase,
+              iteration: record.iteration,
+              question_id: questionSpan.question_id,
+            });
+            events.push({
+              name: "question_end",
+              offset_ms: questionCursor + questionDuration,
+              phase: record.phase,
+              iteration: record.iteration,
+              question_id: questionSpan.question_id,
+              status: questionSpan.status,
+              duration_ms: questionDuration,
+              metrics: questionMetrics,
+            });
+            questionCursor += questionDuration;
+          });
+          events.push({
+            name: "attempt_end",
+            offset_ms: cursor + duration,
+            phase: record.phase,
+            iteration: record.iteration,
+            status: record.status || "unknown",
+            duration_ms: duration,
+            metrics,
+          });
+          cursor += duration;
+        });
+        const runDuration = normalizeNumeric(run?.duration_sec) != null ? Number(run.duration_sec) * 1000.0 : cursor;
+        events.push({
+          name: "run_end",
+          timestamp: run?.ended_at || "",
+          offset_ms: runDuration,
+          duration_ms: runDuration,
+        });
+        return {
+          version: 0,
+          source: "records_fallback",
+          run_id: run?.run_id || "",
+          started_at: run?.started_at || "",
+          ended_at: run?.ended_at || "",
+          duration_ms: runDuration,
+          events,
+          spans,
+          resources: { samples: [], summary: {} },
+          summary: {
+            duration_ms: runDuration,
+            event_count: events.length,
+            span_count: spans.length,
+            attempt_count: records.length,
+            question_count: spans.filter((span) => span.name === "question").length,
+          },
+        };
+      }
+
+      function telemetryForRun(run) {
+        const raw = run?.telemetry && typeof run.telemetry === "object" ? run.telemetry : null;
+        const fallback = fallbackTelemetryFromRun(run);
+        if (!raw) return fallback;
+        const spans = Array.isArray(raw.spans)
+          ? raw.spans.map((span) => normalizeTelemetrySpan(span))
+          : fallback.spans;
+        const events = Array.isArray(raw.events) ? raw.events.filter((event) => event && typeof event === "object") : fallback.events;
+        const durationCandidates = [
+          normalizeNumeric(raw.duration_ms),
+          normalizeNumeric(raw.summary?.duration_ms),
+          normalizeNumeric(run?.duration_sec) != null ? Number(run.duration_sec) * 1000.0 : null,
+          ...spans.map((span) => normalizeNumeric(span.end_offset_ms)),
+        ].filter((value) => typeof value === "number" && Number.isFinite(value));
+        const durationMs = durationCandidates.length ? Math.max(...durationCandidates) : fallback.duration_ms;
+        return {
+          ...fallback,
+          ...raw,
+          duration_ms: durationMs,
+          events,
+          spans,
+          resources: raw.resources && typeof raw.resources === "object" ? raw.resources : fallback.resources,
+          summary: raw.summary && typeof raw.summary === "object" ? raw.summary : fallback.summary,
+        };
+      }
+
+      function currentTelemetryRuns() {
+        return (Array.isArray(currentView().history_runs) ? currentView().history_runs : [])
+          .filter((run) => run && typeof run === "object");
+      }
+
+      function telemetryRunLabel(run) {
+        const runInfo = normalizeModelInfo(run.model_info, run.model);
+        const modelLabel = comparisonModelKey(run.model, runInfo, run.lmstudio_parallelism);
+        const started = String(run.started_at || "").replace("T", " ").slice(0, 19);
+        return `${started || "-"} · ${modelLabel || run.model || "(unknown)"} · ${run.run_id || "-"}`;
+      }
+
+      function syncTelemetrySelection() {
+        const runs = currentTelemetryRuns();
+        if (!runs.length) {
+          state.telemetryRunId = "";
+          return runs;
+        }
+        if (state.telemetryRunId && runs.some((run) => run.run_id === state.telemetryRunId)) {
+          return runs;
+        }
+        state.telemetryRunId = runs[runs.length - 1].run_id || "";
+        return runs;
+      }
+
+      function selectedTelemetryRun() {
+        const runs = syncTelemetrySelection();
+        return runs.find((run) => run.run_id === state.telemetryRunId) || runs[runs.length - 1] || null;
+      }
+
+      function formatBytes(value) {
+        if (typeof value !== "number" || !Number.isFinite(value)) return "N/A";
+        const units = ["B", "KiB", "MiB", "GiB"];
+        let current = value;
+        let unitIndex = 0;
+        while (current >= 1024 && unitIndex < units.length - 1) {
+          current /= 1024;
+          unitIndex += 1;
+        }
+        return `${current.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+      }
+
+      function telemetryBarClass(status) {
+        const tone = statusTone(status);
+        if (tone === "success") return "telemetry-bar-success";
+        if (tone === "timeout") return "telemetry-bar-timeout";
+        if (tone === "error") return "telemetry-bar-error";
+        return "telemetry-bar-other";
+      }
+
+      function renderTelemetryChartSvg(telemetry) {
+        const spans = (Array.isArray(telemetry?.spans) ? telemetry.spans : [])
+          .map((span) => normalizeTelemetrySpan(span))
+          .filter((span) => span.name !== "cooldown" || span.duration_ms > 0);
+        if (!spans.length) {
+          return '<div class="detail-empty">timeline に表示できる span がありません。</div>';
+        }
+        const chartWidth = 1000;
+        const leftPad = 180;
+        const rightPad = 24;
+        const topPad = 26;
+        const rowHeight = 28;
+        const bottomPad = 42;
+        const chartHeight = topPad + spans.length * rowHeight + bottomPad;
+        const maxEnd = Math.max(
+          normalizeNumeric(telemetry?.duration_ms) || 0,
+          ...spans.map((span) => normalizeNumeric(span.end_offset_ms) || 0),
+          1,
+        );
+        const plotWidth = chartWidth - leftPad - rightPad;
+        const x = (value) => leftPad + ((Math.max(Number(value) || 0, 0) / maxEnd) * plotWidth);
+        const ticks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => ratio * maxEnd);
+        const tickMarkup = ticks.map((tick) => {
+          const tx = x(tick);
+          return `
+            <line class="telemetry-axis" x1="${tx.toFixed(1)}" y1="${topPad - 12}" x2="${tx.toFixed(1)}" y2="${chartHeight - bottomPad + 12}" />
+            <text class="telemetry-label" x="${tx.toFixed(1)}" y="${chartHeight - 14}" text-anchor="middle">${escapeHtml((tick / 1000).toFixed(2))}s</text>
+          `;
+        }).join("");
+        const rows = spans.map((span, index) => {
+          const y = topPad + index * rowHeight;
+          const startX = x(span.start_offset_ms);
+          const endX = x(span.end_offset_ms);
+          const width = Math.max(endX - startX, span.duration_ms > 0 ? 2 : 1);
+          const label = `${span.name}${span.phase ? ` ${span.phase}#${span.iteration ?? "-"}` : ""}${span.question_id ? ` ${span.question_id}` : ""}`;
+          return `
+            <text class="telemetry-label" x="12" y="${y + 16}">${escapeHtml(truncateText(label, 28))}</text>
+            <rect class="${telemetryBarClass(span.status)}" x="${startX.toFixed(1)}" y="${y + 5}" width="${width.toFixed(1)}" height="16" rx="3">
+              <title>${escapeHtml(label)} · ${escapeHtml(span.status)} · ${formatMs(span.duration_ms)}</title>
+            </rect>
+          `;
+        }).join("");
+        return `
+          <svg viewBox="0 0 ${chartWidth} ${chartHeight}" role="img" aria-label="Performance telemetry timeline">
+            ${tickMarkup}
+            ${rows}
+            <line class="telemetry-axis" x1="${leftPad}" y1="${chartHeight - bottomPad + 12}" x2="${chartWidth - rightPad}" y2="${chartHeight - bottomPad + 12}" />
+          </svg>
+        `;
+      }
+
+      function firstNumericValue(values) {
+        for (const value of values) {
+          const numeric = normalizeNumeric(value);
+          if (numeric != null && numeric >= 0) return numeric;
+        }
+        return null;
+      }
+
+      function telemetryAnalysisSpans(telemetry) {
+        const spans = (Array.isArray(telemetry?.spans) ? telemetry.spans : [])
+          .map((span) => normalizeTelemetrySpan(span))
+          .filter((span) => span.name !== "cooldown");
+        const questionSpans = spans.filter((span) => span.name === "question");
+        return questionSpans.length ? questionSpans : spans.filter((span) => span.name === "attempt");
+      }
+
+      function tokenTimePoints(telemetry, mode) {
+        return telemetryAnalysisSpans(telemetry).map((span) => {
+          const metrics = span.metrics || {};
+          const tokenCount = mode === "generated"
+            ? firstNumericValue([metrics.completion_tokens])
+            : firstNumericValue([
+              metrics.conversation_prompt_tokens,
+              metrics.prompt_tokens,
+              metrics.initial_prompt_tokens,
+            ]);
+          const timeMs = mode === "generated"
+            ? firstNumericValue([
+              metrics.completion_window_ms,
+              metrics.total_latency_ms,
+              span.duration_ms,
+            ])
+            : firstNumericValue([
+              metrics.conversation_prompt_latency_ms,
+              metrics.prompt_latency_ms,
+              metrics.initial_prompt_latency_ms,
+              metrics.ttft_ms,
+              metrics.total_latency_ms,
+              span.duration_ms,
+            ]);
+          if (tokenCount == null || timeMs == null) return null;
+          return {
+            x: tokenCount,
+            y: timeMs,
+            status: span.status,
+            label: scopeText(span),
+            span_name: span.name,
+          };
+        }).filter(Boolean);
+      }
+
+      function linearFit(points) {
+        if (!Array.isArray(points) || points.length < 2) return null;
+        const n = points.length;
+        const sumX = points.reduce((sum, point) => sum + point.x, 0);
+        const sumY = points.reduce((sum, point) => sum + point.y, 0);
+        const meanX = sumX / n;
+        const meanY = sumY / n;
+        let numerator = 0;
+        let denomX = 0;
+        let denomY = 0;
+        points.forEach((point) => {
+          const dx = point.x - meanX;
+          const dy = point.y - meanY;
+          numerator += dx * dy;
+          denomX += dx * dx;
+          denomY += dy * dy;
+        });
+        if (denomX <= 0 || denomY <= 0) return null;
+        const slope = numerator / denomX;
+        const intercept = meanY - slope * meanX;
+        const correlation = numerator / Math.sqrt(denomX * denomY);
+        return { slope, intercept, correlation };
+      }
+
+      function telemetryDotClass(status) {
+        const tone = statusTone(status);
+        if (tone === "success") return "telemetry-dot-success";
+        if (tone === "timeout") return "telemetry-dot-timeout";
+        if (tone === "error") return "telemetry-dot-error";
+        return "telemetry-dot-other";
+      }
+
+      function renderTelemetryScatterSvg(points, { xLabel, yLabel, emptyText }) {
+        if (!Array.isArray(points) || !points.length) {
+          return `<div class="detail-empty">${escapeHtml(emptyText)}</div>`;
+        }
+        const chartWidth = 720;
+        const chartHeight = 300;
+        const leftPad = 70;
+        const rightPad = 24;
+        const topPad = 28;
+        const bottomPad = 56;
+        const plotWidth = chartWidth - leftPad - rightPad;
+        const plotHeight = chartHeight - topPad - bottomPad;
+        const maxX = Math.max(...points.map((point) => point.x), 1);
+        const maxY = Math.max(...points.map((point) => point.y), 1);
+        const paddedMaxX = maxX * 1.08;
+        const paddedMaxY = maxY * 1.12;
+        const x = (value) => leftPad + (Math.max(Number(value) || 0, 0) / paddedMaxX) * plotWidth;
+        const y = (value) => topPad + plotHeight - (Math.max(Number(value) || 0, 0) / paddedMaxY) * plotHeight;
+        const ticks = [0, 0.25, 0.5, 0.75, 1];
+        const grid = ticks.map((ratio) => {
+          const tx = leftPad + ratio * plotWidth;
+          const ty = topPad + plotHeight - ratio * plotHeight;
+          return `
+            <line class="telemetry-axis" x1="${tx.toFixed(1)}" y1="${topPad}" x2="${tx.toFixed(1)}" y2="${topPad + plotHeight}" />
+            <line class="telemetry-axis" x1="${leftPad}" y1="${ty.toFixed(1)}" x2="${leftPad + plotWidth}" y2="${ty.toFixed(1)}" />
+            <text class="telemetry-label" x="${tx.toFixed(1)}" y="${chartHeight - 26}" text-anchor="middle">${escapeHtml(formatNumber(paddedMaxX * ratio, 0))}</text>
+            <text class="telemetry-label" x="${leftPad - 10}" y="${(ty + 4).toFixed(1)}" text-anchor="end">${escapeHtml(formatMs(paddedMaxY * ratio))}</text>
+          `;
+        }).join("");
+        const fit = linearFit(points);
+        let fitMarkup = "";
+        let fitText = `${points.length} samples`;
+        if (fit) {
+          const y0 = Math.min(Math.max(fit.intercept, 0), paddedMaxY);
+          const y1 = Math.min(Math.max(fit.intercept + fit.slope * paddedMaxX, 0), paddedMaxY);
+          fitMarkup = `<line class="telemetry-fit-line" x1="${x(0).toFixed(1)}" y1="${y(y0).toFixed(1)}" x2="${x(paddedMaxX).toFixed(1)}" y2="${y(y1).toFixed(1)}" />`;
+          fitText = `${points.length} samples · r=${fit.correlation.toFixed(2)} · ${fit.slope.toFixed(2)} ms/token`;
+        }
+        const dots = points.map((point) => `
+          <circle class="${telemetryDotClass(point.status)}" cx="${x(point.x).toFixed(1)}" cy="${y(point.y).toFixed(1)}" r="5" stroke-width="1.2">
+            <title>${escapeHtml(point.label)} · ${escapeHtml(point.status || "-")} · ${formatNumber(point.x, 0)} tok · ${formatMs(point.y)}</title>
+          </circle>
+        `).join("");
+        return `
+          <svg viewBox="0 0 ${chartWidth} ${chartHeight}" role="img" aria-label="${escapeHtml(xLabel)} and ${escapeHtml(yLabel)} correlation">
+            ${grid}
+            ${fitMarkup}
+            ${dots}
+            <line class="telemetry-axis" x1="${leftPad}" y1="${topPad + plotHeight}" x2="${leftPad + plotWidth}" y2="${topPad + plotHeight}" />
+            <line class="telemetry-axis" x1="${leftPad}" y1="${topPad}" x2="${leftPad}" y2="${topPad + plotHeight}" />
+            <text class="telemetry-label" x="${leftPad + plotWidth / 2}" y="${chartHeight - 7}" text-anchor="middle">${escapeHtml(xLabel)}</text>
+            <text class="telemetry-label" x="14" y="${topPad + plotHeight / 2}" text-anchor="middle" transform="rotate(-90 14 ${topPad + plotHeight / 2})">${escapeHtml(yLabel)}</text>
+            <text class="telemetry-label" x="${leftPad}" y="18">${escapeHtml(fitText)}</text>
+          </svg>
+        `;
+      }
+
+      function telemetryTurnScopeText(turn) {
+        const pieces = [];
+        if (turn.phase) pieces.push(`${turn.phase} #${turn.iteration ?? "-"}`);
+        if (turn.question_id) pieces.push(String(turn.question_id));
+        return pieces.join(" · ") || "-";
+      }
+
+      function formatTurnSeconds(value) {
+        const num = Number(value);
+        return Number.isFinite(num) ? formatMs(num * 1000.0) : "N/A";
+      }
+
+      function normalizeTelemetryTurn(rawTurn, index, context = {}) {
+        const raw = rawTurn && typeof rawTurn === "object" ? rawTurn : {};
+        const promptTokens = firstNumericValue([raw.prompt_tokens]) ?? 0;
+        const cachedPromptTokens = firstNumericValue([raw.cached_prompt_tokens]) ?? 0;
+        const completionTokens = firstNumericValue([raw.completion_tokens]) ?? 0;
+        const totalTokens = firstNumericValue([raw.total_tokens]) ?? (promptTokens + completionTokens);
+        const elapsedSec = firstNumericValue([raw.elapsed_sec]);
+        const completionSpeed = firstNumericValue([raw.completion_tokens_per_sec])
+          ?? (elapsedSec && elapsedSec > 0 ? completionTokens / elapsedSec : null);
+        const totalSpeed = firstNumericValue([raw.total_tokens_per_sec])
+          ?? (elapsedSec && elapsedSec > 0 ? totalTokens / elapsedSec : null);
+        const success = raw.success === false ? false : true;
+        const timedOut = raw.timed_out === true;
+        return {
+          ...context,
+          source: raw.source || context.source || "",
+          turn_index: firstNumericValue([raw.turn_index]) ?? (index + 1),
+          prompt_tokens: promptTokens,
+          cached_prompt_tokens: cachedPromptTokens,
+          completion_tokens: completionTokens,
+          total_tokens: totalTokens,
+          cumulative_prompt_tokens: firstNumericValue([raw.cumulative_prompt_tokens]),
+          cumulative_completion_tokens: firstNumericValue([raw.cumulative_completion_tokens]),
+          cumulative_total_tokens: firstNumericValue([raw.cumulative_total_tokens]),
+          elapsed_sec: elapsedSec,
+          completion_tokens_per_sec: completionSpeed,
+          total_tokens_per_sec: totalSpeed,
+          ttft_sec: firstNumericValue([raw.ttft_sec]),
+          first_chunk_sec: firstNumericValue([raw.first_chunk_sec]),
+          prefill_sec: firstNumericValue([raw.prefill_sec]),
+          decode_sec: firstNumericValue([raw.decode_sec]),
+          post_first_token_sec: firstNumericValue([raw.post_first_token_sec]),
+          cost: firstNumericValue([raw.cost]),
+          success,
+          timed_out: timedOut,
+          error_type: raw.error_type || "",
+          error_message: raw.error_message || "",
+          status: success ? (context.status || "success") : (timedOut ? "timeout" : "error"),
+          prompt_breakdown: raw.prompt_breakdown && typeof raw.prompt_breakdown === "object" ? raw.prompt_breakdown : null,
+          question_id: raw.question_id || context.question_id || "",
+        };
+      }
+
+      function enrichTelemetryTurnSequence(turns) {
+        let previousPrompt = null;
+        let cumulativePrompt = 0;
+        let cumulativeCompletion = 0;
+        return turns.map((turn, index) => {
+          const promptTokens = normalizeNumeric(turn.prompt_tokens) || 0;
+          const completionTokens = normalizeNumeric(turn.completion_tokens) || 0;
+          const rawCumulativePrompt = normalizeNumeric(turn.cumulative_prompt_tokens);
+          const rawCumulativeCompletion = normalizeNumeric(turn.cumulative_completion_tokens);
+          cumulativePrompt = rawCumulativePrompt != null && rawCumulativePrompt > 0
+            ? rawCumulativePrompt
+            : cumulativePrompt + promptTokens;
+          cumulativeCompletion = rawCumulativeCompletion != null && rawCumulativeCompletion > 0
+            ? rawCumulativeCompletion
+            : cumulativeCompletion + completionTokens;
+          const promptDelta = previousPrompt == null ? promptTokens : promptTokens - previousPrompt;
+          previousPrompt = promptTokens;
+          const elapsedSec = normalizeNumeric(turn.elapsed_sec);
+          const promptLoadSec = firstNumericValue([turn.prefill_sec, turn.ttft_sec]);
+          return {
+            ...turn,
+            order_index: turn.order_index ?? index + 1,
+            cumulative_prompt_tokens: cumulativePrompt,
+            cumulative_completion_tokens: cumulativeCompletion,
+            cumulative_total_tokens: cumulativePrompt + cumulativeCompletion,
+            prompt_delta_tokens: promptDelta,
+            prompt_tokens_per_sec: firstNumericValue([turn.prompt_tokens_per_sec])
+              ?? (promptLoadSec && promptLoadSec > 0 ? promptTokens / promptLoadSec : null)
+              ?? (elapsedSec && elapsedSec > 0 ? promptTokens / elapsedSec : null),
+            prompt_load_sec: promptLoadSec,
+          };
+        });
+      }
+
+      function fallbackTurnFromMetrics(entry, context = {}) {
+        const promptTokens = firstNumericValue([
+          entry?.conversation_prompt_tokens,
+          entry?.prompt_tokens,
+          entry?.initial_prompt_tokens,
+        ]);
+        const completionTokens = firstNumericValue([entry?.completion_tokens]);
+        const elapsedMs = firstNumericValue([
+          entry?.total_latency_ms,
+          entry?.host_wall_ms,
+          entry?.attempt_wall_ms,
+          entry?.completion_window_ms,
+        ]);
+        if (promptTokens == null && completionTokens == null && elapsedMs == null) return null;
+        return normalizeTelemetryTurn(
+          {
+            source: "record_fallback",
+            turn_index: 1,
+            prompt_tokens: promptTokens || 0,
+            completion_tokens: completionTokens || 0,
+            total_tokens: firstNumericValue([entry?.total_tokens]) || ((promptTokens || 0) + (completionTokens || 0)),
+            cumulative_prompt_tokens: promptTokens || 0,
+            cumulative_completion_tokens: completionTokens || 0,
+            elapsed_sec: elapsedMs != null ? elapsedMs / 1000.0 : null,
+            ttft_sec: firstNumericValue([entry?.ttft_ms]) != null ? firstNumericValue([entry?.ttft_ms]) / 1000.0 : null,
+            prefill_sec: firstNumericValue([entry?.initial_prompt_latency_ms]) != null ? firstNumericValue([entry?.initial_prompt_latency_ms]) / 1000.0 : null,
+            decode_sec: firstNumericValue([entry?.completion_window_ms]) != null ? firstNumericValue([entry?.completion_window_ms]) / 1000.0 : null,
+            post_first_token_sec: firstNumericValue([entry?.completion_window_ms]) != null ? firstNumericValue([entry?.completion_window_ms]) / 1000.0 : null,
+            success: entry?.status !== "error" && entry?.status !== "timeout",
+            timed_out: entry?.status === "timeout",
+          },
+          0,
+          context,
+        );
+      }
+
+      function turnUsageForRun(run) {
+        const records = Array.isArray(run?.records) ? run.records : [];
+        const allTurns = [];
+        records.forEach((record, recordIndex) => {
+          const baseContext = {
+            phase: record.phase || "",
+            iteration: record.iteration ?? "",
+            status: record.status || "unknown",
+            record_index: recordIndex,
+          };
+          const questionResults = Array.isArray(record?.question_results)
+            ? record.question_results.filter((item) => item && typeof item === "object")
+            : [];
+          if (questionResults.length) {
+            questionResults.forEach((questionResult) => {
+              const context = {
+                ...baseContext,
+                question_id: questionResult.question_id || "",
+                status: questionResult.status || record.status || "unknown",
+              };
+              const rawTurns = Array.isArray(questionResult.turn_usage) ? questionResult.turn_usage : [];
+              let turns = rawTurns.map((turn, index) => normalizeTelemetryTurn(turn, index, context));
+              if (!turns.length) {
+                const fallback = fallbackTurnFromMetrics(questionResult, context);
+                if (fallback) turns = [fallback];
+              }
+              allTurns.push(...enrichTelemetryTurnSequence(turns));
+            });
+            return;
+          }
+          const rawTurns = Array.isArray(record?.turn_usage) ? record.turn_usage : [];
+          let turns = rawTurns.map((turn, index) => normalizeTelemetryTurn(turn, index, baseContext));
+          if (!turns.length) {
+            const fallback = fallbackTurnFromMetrics(record, baseContext);
+            if (fallback) turns = [fallback];
+          }
+          allTurns.push(...enrichTelemetryTurnSequence(turns));
+        });
+        return allTurns.map((turn, index) => ({ ...turn, order_index: index + 1 }));
+      }
+
+      const TELEMETRY_PROMPT_CATEGORIES = [
+        { key: "system", label: "System", color: "#569cd6" },
+        { key: "task", label: "Task", color: "#4ec9b0" },
+        { key: "conversation_history", label: "History", color: "#dcdcaa" },
+        { key: "assistant_tool_calls", label: "Tool calls", color: "#c586c0" },
+        { key: "tool_results", label: "Tool output", color: "#ce9178" },
+        { key: "tool_schema", label: "Tool schema", color: "#9cdcfe" },
+      ];
+
+      function promptCompositionFromTurns(turns) {
+        const categories = new Map();
+        const tools = new Map();
+        let sampleCount = 0;
+        turns.forEach((turn) => {
+          const breakdown = turn.prompt_breakdown;
+          if (!breakdown || typeof breakdown !== "object") return;
+          const rawCategories = breakdown.categories || {};
+          Object.keys(rawCategories).forEach((key) => {
+            const value = normalizeNumeric(rawCategories[key]?.estimated_tokens);
+            if (value != null && value > 0) categories.set(key, (categories.get(key) || 0) + value);
+          });
+          const rawTools = breakdown.tool_results_by_tool || {};
+          Object.keys(rawTools).forEach((name) => {
+            const value = normalizeNumeric(rawTools[name]?.estimated_tokens);
+            if (value != null && value > 0) tools.set(name, (tools.get(name) || 0) + value);
+          });
+          sampleCount += 1;
+        });
+        return { categories, tools, sampleCount };
+      }
+
+      function renderTelemetryStackBar(segments) {
+        const valid = segments.filter((segment) => Number(segment.value) > 0);
+        const total = valid.reduce((sum, segment) => sum + Number(segment.value), 0);
+        if (!(total > 0)) return "";
+        const bar = valid.map((segment) => {
+          const pct = (Number(segment.value) / total) * 100;
+          return `<div class="telemetry-stack-seg" style="width:${pct.toFixed(2)}%;background:${segment.color}" title="${escapeHtml(segment.label)}: ${formatNumber(segment.value, 0)} tok (${pct.toFixed(0)}%)"></div>`;
+        }).join("");
+        const legend = valid.map((segment) => {
+          const pct = (Number(segment.value) / total) * 100;
+          return `<span class="telemetry-stack-legend-item"><span class="telemetry-swatch" style="background:${segment.color}"></span>${escapeHtml(segment.label)} · ${formatNumber(segment.value, 0)} tok (${pct.toFixed(0)}%)</span>`;
+        }).join("");
+        return `<div class="telemetry-stack-bar">${bar}</div><div class="telemetry-stack-legend">${legend}</div>`;
+      }
+
+      function renderTelemetryPromptComposition(turns) {
+        const composition = promptCompositionFromTurns(turns);
+        const segments = TELEMETRY_PROMPT_CATEGORIES.map((category) => ({
+          ...category,
+          value: composition.categories.get(category.key) || 0,
+        }));
+        const total = segments.reduce((sum, segment) => sum + segment.value, 0);
+        if (!(total > 0)) {
+          return '<div class="detail-empty">prompt breakdown はこの run には記録されていません。</div>';
+        }
+        const toolRows = Array.from(composition.tools.entries())
+          .sort((left, right) => right[1] - left[1])
+          .slice(0, 8)
+          .map(([name, value]) => `<span class="tag">${escapeHtml(name)} · ${formatNumber(value, 0)} tok</span>`)
+          .join("");
+        return `
+          <h3 class="detail-section-heading">Context Composition</h3>
+          <div class="table-note">${formatNumber(composition.sampleCount, 0)} turn samples · estimated by characters, not provider tokenizer counts.</div>
+          ${renderTelemetryStackBar(segments)}
+          ${toolRows ? `<div class="tag-list" style="margin-top: 10px;">${toolRows}</div>` : ""}
+        `;
+      }
+
+      function renderTelemetryTurnLineSvg(turns, series, { title, yFormatter = (value) => formatNumber(value, 0), emptyText }) {
+        const validSeries = series.map((item) => ({
+          ...item,
+          points: turns
+            .map((turn) => ({
+              x: normalizeNumeric(turn.order_index),
+              y: normalizeNumeric(turn[item.key]),
+              label: `${telemetryTurnScopeText(turn)} · turn ${turn.turn_index}`,
+            }))
+            .filter((point) => point.x != null && point.y != null && Number.isFinite(point.x) && Number.isFinite(point.y)),
+        })).filter((item) => item.points.length);
+        if (!validSeries.length) {
+          return `<div class="detail-empty">${escapeHtml(emptyText)}</div>`;
+        }
+
+        const allPoints = validSeries.flatMap((item) => item.points);
+        const chartWidth = 720;
+        const chartHeight = 280;
+        const leftPad = 72;
+        const rightPad = 28;
+        const topPad = 30;
+        const bottomPad = 54;
+        const plotWidth = chartWidth - leftPad - rightPad;
+        const plotHeight = chartHeight - topPad - bottomPad;
+        const minX = Math.min(...allPoints.map((point) => point.x), 1);
+        const maxX = Math.max(...allPoints.map((point) => point.x), minX + 1);
+        const maxY = Math.max(...allPoints.map((point) => point.y), 1);
+        const paddedMaxY = maxY * 1.12;
+        const x = (value) => leftPad + ((value - minX) / Math.max(maxX - minX, 1)) * plotWidth;
+        const y = (value) => topPad + plotHeight - (Math.max(value, 0) / paddedMaxY) * plotHeight;
+        const yTicks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => paddedMaxY * ratio);
+        const grid = yTicks.map((value) => {
+          const ty = y(value);
+          return `
+            <line class="telemetry-axis" x1="${leftPad}" y1="${ty.toFixed(1)}" x2="${leftPad + plotWidth}" y2="${ty.toFixed(1)}" />
+            <text class="telemetry-label" x="${leftPad - 10}" y="${(ty + 4).toFixed(1)}" text-anchor="end">${escapeHtml(yFormatter(value))}</text>
+          `;
+        }).join("");
+        const lineMarkup = validSeries.map((item) => {
+          const coords = item.points.map((point) => `${x(point.x).toFixed(1)},${y(point.y).toFixed(1)}`).join(" ");
+          const dots = item.points.length <= 80
+            ? item.points.map((point) => `
+              <circle class="telemetry-point" cx="${x(point.x).toFixed(1)}" cy="${y(point.y).toFixed(1)}" r="3.5" fill="${item.color}">
+                <title>${escapeHtml(point.label)} · ${escapeHtml(item.label)}: ${escapeHtml(yFormatter(point.y))}</title>
+              </circle>
+            `).join("")
+            : "";
+          return `<polyline class="telemetry-line" points="${coords}" stroke="${item.color}"></polyline>${dots}`;
+        }).join("");
+        const legend = validSeries.map((item) => `<span class="telemetry-stack-legend-item"><span class="telemetry-swatch" style="background:${item.color}"></span>${escapeHtml(item.label)}</span>`).join("");
+        return `
+          <svg viewBox="0 0 ${chartWidth} ${chartHeight}" role="img" aria-label="${escapeHtml(title)}">
+            ${grid}
+            ${lineMarkup}
+            <line class="telemetry-axis" x1="${leftPad}" y1="${topPad + plotHeight}" x2="${leftPad + plotWidth}" y2="${topPad + plotHeight}" />
+            <line class="telemetry-axis" x1="${leftPad}" y1="${topPad}" x2="${leftPad}" y2="${topPad + plotHeight}" />
+            <text class="telemetry-label" x="${leftPad + plotWidth / 2}" y="${chartHeight - 16}" text-anchor="middle">turn order</text>
+            <text class="telemetry-label" x="${leftPad}" y="18">${escapeHtml(title)}</text>
+          </svg>
+          <div class="telemetry-stack-legend">${legend}</div>
+        `;
+      }
+
+      function renderTelemetry() {
+        const runs = syncTelemetrySelection();
+        const selectNode = document.getElementById("telemetry-run-filter");
+        const metaNode = document.getElementById("telemetry-run-meta");
+        const statsNode = document.getElementById("telemetry-stats");
+        const chartNode = document.getElementById("telemetry-chart");
+        const generatedContextChartNode = document.getElementById("telemetry-generated-context-chart");
+        const inputContextChartNode = document.getElementById("telemetry-input-context-chart");
+        const turnStatsNode = document.getElementById("telemetry-turn-stats");
+        const turnContextChartNode = document.getElementById("telemetry-turn-context-chart");
+        const turnSpeedChartNode = document.getElementById("telemetry-turn-speed-chart");
+        const promptCompositionNode = document.getElementById("telemetry-prompt-composition");
+        const turnBody = document.getElementById("telemetry-turn-body");
+        const spanBody = document.getElementById("telemetry-span-body");
+        const eventBody = document.getElementById("telemetry-event-body");
+
+        if (!runs.length) {
+          selectNode.innerHTML = '<option value="">Run</option>';
+          selectNode.disabled = true;
+          metaNode.textContent = "telemetry 対象の run がありません。";
+          statsNode.innerHTML = "";
+          chartNode.innerHTML = '<div class="detail-empty">history.json に run がありません。</div>';
+          generatedContextChartNode.innerHTML = '<div class="detail-empty">history.json に run がありません。</div>';
+          inputContextChartNode.innerHTML = '<div class="detail-empty">history.json に run がありません。</div>';
+          turnStatsNode.innerHTML = "";
+          turnContextChartNode.innerHTML = '<div class="detail-empty">history.json に run がありません。</div>';
+          turnSpeedChartNode.innerHTML = '<div class="detail-empty">history.json に run がありません。</div>';
+          promptCompositionNode.innerHTML = '<div class="detail-empty">prompt breakdown はありません。</div>';
+          turnBody.innerHTML = '<tr><td colspan="10" class="muted">turn usage はありません。</td></tr>';
+          spanBody.innerHTML = '<tr><td colspan="7" class="muted">span はありません。</td></tr>';
+          eventBody.innerHTML = '<tr><td colspan="4" class="muted">event はありません。</td></tr>';
+          return;
+        }
+
+        selectNode.disabled = false;
+        selectNode.innerHTML = runs.map((run) => `
+          <option value="${escapeHtml(run.run_id || "")}">${escapeHtml(telemetryRunLabel(run))}</option>
+        `).join("");
+        selectNode.value = state.telemetryRunId;
+
+        const run = selectedTelemetryRun();
+        const telemetry = telemetryForRun(run);
+        const spans = (Array.isArray(telemetry.spans) ? telemetry.spans : []).map((span) => normalizeTelemetrySpan(span));
+        const attemptSpans = spans.filter((span) => span.name === "attempt");
+        const questionSpans = spans.filter((span) => span.name === "question");
+        const resourceSummary = telemetry.resources?.summary || {};
+        const statusCounts = spans.reduce((counts, span) => {
+          const status = String(span.status || "unknown");
+          counts[status] = (counts[status] || 0) + 1;
+          return counts;
+        }, {});
+
+        metaNode.textContent = `${spans.length} spans · ${telemetry.source || "telemetry"} · run ${run?.run_id || "-"}`;
+        statsNode.innerHTML = [
+          ["Duration", formatMs(telemetry.duration_ms), `${attemptSpans.length} attempts / ${questionSpans.length} questions`],
+          ["CPU User", formatMs(resourceSummary.cpu_user_delta_ms), "process delta"],
+          ["CPU System", formatMs(resourceSummary.cpu_system_delta_ms), "process delta"],
+          ["Peak RSS", formatBytes(resourceSummary.peak_rss_bytes), `${resourceSummary.sample_count || 0} samples`],
+          ["Status", Object.entries(statusCounts).map(([key, value]) => `${key}:${value}`).join(" · ") || "-", "span outcomes"],
+        ].map(([label, value, extra]) => `
+          <div class="stat">
+            <div class="label">${escapeHtml(label)}</div>
+            <div class="value">${escapeHtml(value)}</div>
+            <div class="extra">${escapeHtml(extra)}</div>
+          </div>
+        `).join("");
+        chartNode.innerHTML = renderTelemetryChartSvg(telemetry);
+        generatedContextChartNode.innerHTML = renderTelemetryScatterSvg(
+          tokenTimePoints(telemetry, "generated"),
+          {
+            xLabel: "generated tokens",
+            yLabel: "generation time",
+            emptyText: "生成 context と時間を描画できる token/latency がありません。",
+          },
+        );
+        inputContextChartNode.innerHTML = renderTelemetryScatterSvg(
+          tokenTimePoints(telemetry, "input"),
+          {
+            xLabel: "input context tokens",
+            yLabel: "prompt time",
+            emptyText: "入力 context と時間を描画できる token/latency がありません。",
+          },
+        );
+
+        const turns = turnUsageForRun(run);
+        const successTurns = turns.filter((turn) => turn.success !== false);
+        const failedTurns = turns.length - successTurns.length;
+        const totalPromptTokens = successTurns.reduce((sum, turn) => sum + (normalizeNumeric(turn.prompt_tokens) || 0), 0);
+        const totalCompletionTokens = successTurns.reduce((sum, turn) => sum + (normalizeNumeric(turn.completion_tokens) || 0), 0);
+        const elapsedValues = turns.map((turn) => normalizeNumeric(turn.elapsed_sec)).filter((value) => value != null && value >= 0);
+        const avgElapsedSec = elapsedValues.length ? elapsedValues.reduce((sum, value) => sum + value, 0) / elapsedValues.length : null;
+        const speedValues = successTurns.map((turn) => normalizeNumeric(turn.completion_tokens_per_sec)).filter((value) => value != null && value >= 0);
+        const avgGenSpeed = speedValues.length ? speedValues.reduce((sum, value) => sum + value, 0) / speedValues.length : null;
+        turnStatsNode.innerHTML = [
+          ["LLM Calls", formatNumber(turns.length, 0), failedTurns ? `${failedTurns} failed` : "all successful"],
+          ["Prompt Tokens", formatNumber(totalPromptTokens, 0), "sum of successful turns"],
+          ["Completion Tokens", formatNumber(totalCompletionTokens, 0), "sum of successful turns"],
+          ["Avg Elapsed", avgElapsedSec != null ? formatTurnSeconds(avgElapsedSec) : "N/A", `${elapsedValues.length} timed turns`],
+          ["Avg Gen Speed", avgGenSpeed != null ? formatTps(avgGenSpeed) : "N/A", "completion tokens / elapsed"],
+        ].map(([label, value, extra]) => `
+          <div class="stat">
+            <div class="label">${escapeHtml(label)}</div>
+            <div class="value">${escapeHtml(String(value))}</div>
+            <div class="extra">${escapeHtml(extra)}</div>
+          </div>
+        `).join("");
+        turnContextChartNode.innerHTML = renderTelemetryTurnLineSvg(
+          turns,
+          [
+            { key: "prompt_tokens", label: "Prompt", color: "#4ec9b0" },
+            { key: "completion_tokens", label: "Completion", color: "#c586c0" },
+          ],
+          {
+            title: "Context Size by Turn",
+            yFormatter: (value) => formatNumber(value, 0),
+            emptyText: "turn ごとの token 数がありません。",
+          },
+        );
+        turnSpeedChartNode.innerHTML = renderTelemetryTurnLineSvg(
+          turns,
+          [
+            { key: "completion_tokens_per_sec", label: "Generation", color: "#ce9178" },
+            { key: "prompt_tokens_per_sec", label: "Prompt load", color: "#dcdcaa" },
+          ],
+          {
+            title: "Token Speed by Turn",
+            yFormatter: (value) => formatTps(value),
+            emptyText: "turn ごとの速度情報がありません。",
+          },
+        );
+        promptCompositionNode.innerHTML = renderTelemetryPromptComposition(turns);
+        turnBody.innerHTML = turns.length ? turns.slice(0, 240).map((turn) => `
+          <tr>
+            <td>
+              <div class="detail-row-title">${escapeHtml(telemetryTurnScopeText(turn))}</div>
+              <div class="detail-row-meta">${escapeHtml(turn.source || "-")}</div>
+            </td>
+            <td>${escapeHtml(turn.turn_index)}</td>
+            <td>${formatNumber(turn.prompt_tokens, 0)}</td>
+            <td>${formatNumber(turn.prompt_delta_tokens, 0)}</td>
+            <td>${formatNumber(turn.cached_prompt_tokens, 0)}</td>
+            <td>${formatNumber(turn.completion_tokens, 0)}</td>
+            <td>${formatNumber(turn.cumulative_total_tokens, 0)}</td>
+            <td>${turn.ttft_sec != null ? formatTurnSeconds(turn.ttft_sec) : '<span class="muted">N/A</span>'}</td>
+            <td>${turn.elapsed_sec != null ? formatTurnSeconds(turn.elapsed_sec) : '<span class="muted">N/A</span>'}</td>
+            <td>${turn.completion_tokens_per_sec != null ? formatTps(turn.completion_tokens_per_sec) : '<span class="muted">N/A</span>'}</td>
+          </tr>
+        `).join("") : '<tr><td colspan="10" class="muted">turn usage はありません。</td></tr>';
+
+        spanBody.innerHTML = spans.length ? spans.map((span) => {
+          const metrics = span.metrics || {};
+          return `
+            <tr>
+              <td>
+                <div class="detail-row-title">${escapeHtml(span.name)}</div>
+                <div class="detail-row-meta">${escapeHtml(scopeText(span))}</div>
+              </td>
+              <td>${renderStatusPill(span.status)}</td>
+              <td>${formatMs(span.duration_ms)}</td>
+              <td>${formatMs(metrics.total_latency_ms)}</td>
+              <td>${formatMs(metrics.ttft_ms)}</td>
+              <td>${formatTps(metrics.decode_tps)}</td>
+              <td>${formatNumber(metrics.tool_call_count, 0)}</td>
+            </tr>
+          `;
+        }).join("") : '<tr><td colspan="7" class="muted">span はありません。</td></tr>';
+
+        const events = (Array.isArray(telemetry.events) ? telemetry.events : [])
+          .filter((event) => event && typeof event === "object")
+          .sort((left, right) => (normalizeNumeric(left.offset_ms) || 0) - (normalizeNumeric(right.offset_ms) || 0));
+        eventBody.innerHTML = events.length ? events.slice(0, 120).map((event) => `
+          <tr>
+            <td>${formatMs(normalizeNumeric(event.offset_ms) || 0)}</td>
+            <td>${escapeHtml(event.name || "-")}</td>
+            <td>${event.status ? renderStatusPill(event.status) : '<span class="muted">-</span>'}</td>
+            <td>${escapeHtml(scopeText(event))}</td>
+          </tr>
+        `).join("") : '<tr><td colspan="4" class="muted">event はありません。</td></tr>';
       }
 
       function resolveLogUrl(logPath) {
@@ -3488,6 +4640,7 @@ ${reportData.prompt_preview || prompts[prompts.length - 1]}`;
           state.selectedErrorSignature = "";
           state.selectedErrorEventKey = "";
           state.selectedRecordKey = "";
+          state.telemetryRunId = "";
           refreshCurrentView();
           renderAll();
         });
@@ -3555,6 +4708,13 @@ ${reportData.prompt_preview || prompts[prompts.length - 1]}`;
         });
       }
 
+      function bindTelemetryControls() {
+        document.getElementById("telemetry-run-filter").addEventListener("change", (event) => {
+          state.telemetryRunId = event.target.value;
+          renderTelemetry();
+        });
+      }
+
     function bindCompareControls() {
       document.getElementById("compare-left-model").addEventListener("change", (event) => {
         state.compare.leftModel = event.target.value;
@@ -3581,6 +4741,7 @@ ${reportData.prompt_preview || prompts[prompts.length - 1]}`;
         renderLeaderboard();
         renderColdWarm();
         renderStability();
+        renderTelemetry();
         renderErrorAnalysis();
         renderDetails();
       }
@@ -3597,6 +4758,7 @@ ${reportData.prompt_preview || prompts[prompts.length - 1]}`;
         state.selectedErrorSignature = "";
         state.selectedErrorEventKey = "";
         state.selectedRecordKey = "";
+        state.telemetryRunId = "";
         state.rawLogCache = {};
         renderAll();
       }
@@ -3655,6 +4817,7 @@ ${reportData.prompt_preview || prompts[prompts.length - 1]}`;
       bindCompareControls();
       bindDetailFilters();
       bindErrorFilters();
+      bindTelemetryControls();
       bindSorters("#leaderboard-table", state.leaderboardSort, renderLeaderboard);
       bindSorters("#coldwarm-table", state.coldwarmSort, renderColdWarm);
       bindSorters("#stability-table", state.stabilitySort, renderStability);

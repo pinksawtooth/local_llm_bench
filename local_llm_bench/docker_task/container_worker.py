@@ -18,6 +18,12 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, Optional
 
 from ..config import UNSLOTH_STUDIO_PROVIDER
+from ..telemetry import (
+    build_failed_turn_usage_record,
+    build_turn_usage_record,
+    normalize_turn_usage_records,
+    prompt_breakdown_from_messages,
+)
 from ..unsloth_api import UnslothStudioAuthSession, load_unsloth_auth_from_env
 from .ghidra_tool_mode import DEFAULT_GHIDRA_TOOL_MODE, normalize_ghidra_tool_mode
 from .targets import (
@@ -494,6 +500,9 @@ async def _run_question(payload: Dict[str, Any]) -> Dict[str, Any]:
                         {"role": "user", "content": task_prompt},
                     ]
 
+                    turn_usage: list[dict[str, Any]] = []
+                    trace["turn_usage"] = turn_usage
+                    tool_call_names_by_id: dict[str, str] = {}
                     total_prompt_tokens = 0
                     total_completion_tokens = 0
                     total_tokens = 0
@@ -517,6 +526,11 @@ async def _run_question(payload: Dict[str, Any]) -> Dict[str, Any]:
                             body["tools"] = tools
                             body["tool_choice"] = "auto"
 
+                        request_prompt_breakdown = prompt_breakdown_from_messages(
+                            messages,
+                            tools,
+                            tool_call_names_by_id=tool_call_names_by_id,
+                        )
                         turn_trace: dict[str, Any] = {
                             "turn": turn_index + 1,
                             "request": {
@@ -528,12 +542,34 @@ async def _run_question(payload: Dict[str, Any]) -> Dict[str, Any]:
                             },
                             "tool_events": [],
                         }
-                        response_payload, request_latency_ms = _chat_completion(
-                            api_base=api_base,
-                            body=body,
-                            timeout_sec=timeout_sec,
-                            urlopen=chat_urlopen,
-                        )
+                        request_started_perf = time.perf_counter()
+                        try:
+                            response_payload, request_latency_ms = _chat_completion(
+                                api_base=api_base,
+                                body=body,
+                                timeout_sec=timeout_sec,
+                                urlopen=chat_urlopen,
+                            )
+                        except Exception as exc:
+                            elapsed_sec = max(time.perf_counter() - request_started_perf, 0.0)
+                            error_text = _format_exception_text(exc)
+                            lower_error = error_text.lower()
+                            timed_out = isinstance(exc, TimeoutError) or "timeout" in lower_error or "timed out" in lower_error
+                            turn_usage.append(
+                                build_failed_turn_usage_record(
+                                    source="docker_worker",
+                                    turn_index=turn_index + 1,
+                                    error_type="timeout" if timed_out else "api_error",
+                                    error_message=error_text,
+                                    cumulative_prompt_tokens=total_prompt_tokens,
+                                    cumulative_completion_tokens=total_completion_tokens,
+                                    elapsed_sec=elapsed_sec,
+                                    timed_out=timed_out,
+                                    prompt_breakdown=request_prompt_breakdown,
+                                    question_id=str(question.get("id") or ""),
+                                )
+                            )
+                            raise
                         turn_trace["request_latency_ms"] = request_latency_ms
                         if isinstance(request_latency_ms, (int, float)) and request_latency_ms > 0:
                             total_request_latency_ms += float(request_latency_ms)
@@ -541,14 +577,37 @@ async def _run_question(payload: Dict[str, Any]) -> Dict[str, Any]:
                             first_response_latency_ms = request_latency_ms
 
                         usage = response_payload.get("usage")
+                        current_prompt_tokens = 0
+                        current_completion_tokens = 0
+                        current_total_tokens = 0
                         if isinstance(usage, dict):
                             current_prompt_tokens = int(usage.get("prompt_tokens") or 0)
                             total_prompt_tokens += current_prompt_tokens
                             if initial_prompt_tokens is None and current_prompt_tokens > 0:
                                 initial_prompt_tokens = current_prompt_tokens
-                            total_completion_tokens += int(usage.get("completion_tokens") or 0)
-                            total_tokens += int(usage.get("total_tokens") or 0)
+                            current_completion_tokens = int(usage.get("completion_tokens") or 0)
+                            total_completion_tokens += current_completion_tokens
+                            current_total_tokens = int(usage.get("total_tokens") or 0)
+                            total_tokens += current_total_tokens
                         turn_trace["usage"] = _json_clone(usage)
+                        turn_usage.append(
+                            build_turn_usage_record(
+                                source="docker_worker",
+                                turn_index=turn_index + 1,
+                                prompt_tokens=current_prompt_tokens,
+                                completion_tokens=current_completion_tokens,
+                                total_tokens=current_total_tokens or (current_prompt_tokens + current_completion_tokens),
+                                cumulative_prompt_tokens=total_prompt_tokens,
+                                cumulative_completion_tokens=total_completion_tokens,
+                                elapsed_sec=(
+                                    request_latency_ms / 1000.0
+                                    if isinstance(request_latency_ms, (int, float)) and request_latency_ms > 0
+                                    else None
+                                ),
+                                prompt_breakdown=request_prompt_breakdown,
+                                question_id=str(question.get("id") or ""),
+                            )
+                        )
 
                         choices = response_payload.get("choices")
                         if not isinstance(choices, list) or not choices:
@@ -586,6 +645,9 @@ async def _run_question(payload: Dict[str, Any]) -> Dict[str, Any]:
                             for tool_call in tool_calls:
                                 function_block = tool_call.get("function") or {}
                                 tool_name = str(function_block.get("name") or "").strip()
+                                tool_call_id = tool_call.get("id")
+                                if isinstance(tool_call_id, str) and tool_call_id:
+                                    tool_call_names_by_id[tool_call_id] = tool_name
                                 raw_arguments = function_block.get("arguments")
                                 try:
                                     tool_arguments = json.loads(raw_arguments) if isinstance(raw_arguments, str) and raw_arguments.strip() else {}
@@ -682,6 +744,7 @@ async def _run_question(payload: Dict[str, Any]) -> Dict[str, Any]:
                                 "decode_tps": decode_tps,
                                 "end_to_end_tps": end_to_end_tps,
                                 "approx_prompt_tps": approx_prompt_tps,
+                                "turn_usage": normalize_turn_usage_records(turn_usage),
                                 "trace": trace,
                             }
                             break
@@ -748,6 +811,7 @@ def _error_payload(status: str, exc: Exception, *, trace: Dict[str, Any] | None 
         "decode_tps": None,
         "end_to_end_tps": None,
         "approx_prompt_tps": None,
+        "turn_usage": normalize_turn_usage_records(trace.get("turn_usage") if isinstance(trace, dict) else None),
     }
     if trace:
         payload["trace"] = trace

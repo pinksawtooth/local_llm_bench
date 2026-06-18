@@ -8,6 +8,12 @@ from typing import Any, Callable, Dict
 from .config import BenchmarkConfig
 from .lmstudio_api import LMStudioAPIError, stream_chat_completion
 from .stats import compute_run_summary
+from .telemetry import (
+    TelemetryRecorder,
+    build_failed_turn_usage_record,
+    build_turn_usage_record,
+    prompt_breakdown_from_messages,
+)
 
 
 def _utc_iso_now() -> str:
@@ -29,6 +35,7 @@ def _empty_record(
     started_at: str,
     status: str,
     error: str,
+    prompt_text: str,
 ) -> Dict[str, Any]:
     return {
         "phase": phase,
@@ -54,7 +61,65 @@ def _empty_record(
         "error": error,
         "reasoning_text": "",
         "response_text": "",
+        "turn_usage": [
+            build_failed_turn_usage_record(
+                source="prompt",
+                turn_index=1,
+                error_type=status,
+                error_message=error,
+                timed_out=status == "timeout",
+                prompt_breakdown=prompt_breakdown_from_messages([{"role": "user", "content": prompt_text}]),
+            )
+        ],
     }
+
+
+def _turn_usage_from_result(result: Any, *, prompt_text: str) -> list[Dict[str, Any]]:
+    prompt_breakdown = prompt_breakdown_from_messages([{"role": "user", "content": prompt_text}])
+    elapsed_sec = (
+        float(result.total_latency_ms) / 1000.0
+        if isinstance(result.total_latency_ms, (int, float)) and result.total_latency_ms > 0
+        else None
+    )
+    return [
+        build_turn_usage_record(
+            source="prompt",
+            turn_index=1,
+            prompt_tokens=result.prompt_tokens,
+            completion_tokens=result.completion_tokens,
+            total_tokens=result.total_tokens,
+            cumulative_prompt_tokens=result.prompt_tokens,
+            cumulative_completion_tokens=result.completion_tokens,
+            elapsed_sec=elapsed_sec,
+            ttft_sec=(
+                float(result.ttft_ms) / 1000.0
+                if isinstance(result.ttft_ms, (int, float)) and result.ttft_ms >= 0
+                else None
+            ),
+            first_chunk_sec=(
+                float(result.ttft_ms) / 1000.0
+                if isinstance(result.ttft_ms, (int, float)) and result.ttft_ms >= 0
+                else None
+            ),
+            prefill_sec=(
+                float(result.initial_prompt_latency_ms) / 1000.0
+                if isinstance(result.initial_prompt_latency_ms, (int, float))
+                and result.initial_prompt_latency_ms >= 0
+                else None
+            ),
+            decode_sec=(
+                float(result.completion_window_ms) / 1000.0
+                if isinstance(result.completion_window_ms, (int, float)) and result.completion_window_ms >= 0
+                else None
+            ),
+            post_first_token_sec=(
+                float(result.completion_window_ms) / 1000.0
+                if isinstance(result.completion_window_ms, (int, float)) and result.completion_window_ms >= 0
+                else None
+            ),
+            prompt_breakdown=prompt_breakdown,
+        )
+    ]
 
 
 def run_benchmark(
@@ -78,6 +143,13 @@ def run_benchmark(
     run_id = uuid.uuid4().hex[:8]
     started_at = _utc_iso_now()
     started_perf = now_fn()
+    telemetry = TelemetryRecorder(
+        run_id=run_id,
+        started_at=started_at,
+        now_fn=now_fn,
+        origin_perf=started_perf,
+        source="prompt",
+    )
 
     console_lines: list[str] = []
     attempt_logs: list[Dict[str, Any]] = []
@@ -98,6 +170,12 @@ def run_benchmark(
     for phase, iteration in phases:
         attempt_started_at = _utc_iso_now()
         emit(f"  - {phase} #{iteration} ...")
+        attempt_span = telemetry.start_span(
+            "attempt",
+            phase=phase,
+            iteration=iteration,
+            benchmark_mode=config.mode,
+        )
         try:
             result = client(
                 api_base=config.api_base,
@@ -132,7 +210,10 @@ def run_benchmark(
                 "error": None,
                 "reasoning_text": result.reasoning_text,
                 "response_text": result.response_text,
+                "turn_usage": _turn_usage_from_result(result, prompt_text=config.prompt_text),
             }
+            attempt_wall_ms = attempt_span.finish(status="success", metrics=record)
+            record["attempt_wall_ms"] = attempt_wall_ms
             records.append(record)
             attempt_logs.append(
                 {
@@ -169,7 +250,10 @@ def run_benchmark(
                 started_at=attempt_started_at,
                 status=status,
                 error=str(exc),
+                prompt_text=config.prompt_text,
             )
+            attempt_wall_ms = attempt_span.finish(status=status, metrics=record)
+            record["attempt_wall_ms"] = attempt_wall_ms
             records.append(record)
             attempt_logs.append(
                 {
@@ -198,7 +282,14 @@ def run_benchmark(
                 }
             )
         if config.runs.cooldown_sec > 0:
+            cooldown_span = telemetry.start_span(
+                "cooldown",
+                phase=phase,
+                iteration=iteration,
+                cooldown_sec=config.runs.cooldown_sec,
+            )
             sleep_fn(config.runs.cooldown_sec)
+            cooldown_span.finish(status="success", metrics={"cooldown_sec": config.runs.cooldown_sec})
 
     ended_at = _utc_iso_now()
     duration_sec = max(now_fn() - started_perf, 0.0)
@@ -229,6 +320,7 @@ def run_benchmark(
         "question_count": 1,
         "records": records,
     }
+    run_data["telemetry"] = telemetry.build(ended_at=ended_at, duration_ms=duration_sec * 1000.0)
     run_data["summary"] = compute_run_summary(run_data)
     run_data["_log_bundle"] = {
         "console_lines": console_lines,

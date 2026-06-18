@@ -16,6 +16,7 @@ from typing import Any, Callable, Dict, Optional
 from ..config import BenchmarkConfig
 from ..error_utils import merge_excerpts
 from ..stats import compute_run_summary
+from ..telemetry import TelemetryRecorder, normalize_turn_usage_records
 from .scorer import score_answer
 from .spec import BenchmarkSpec, Question, load_spec
 from .targets import build_shared_system_prompt, build_task_prompt, resolve_native_binary_target
@@ -252,7 +253,20 @@ def _coerce_question_result(
         "benchmark_error_count": error_count,
         "stderr_excerpt": worker_result.get("stderr_excerpt"),
         "log_path": None,
+        "turn_usage": normalize_turn_usage_records(worker_result.get("turn_usage")),
     }
+
+
+def _flatten_question_turn_usage(question_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    flattened: list[dict[str, Any]] = []
+    for question_result in question_results:
+        question_id = str(question_result.get("question_id") or "")
+        for turn in normalize_turn_usage_records(question_result.get("turn_usage")):
+            item = dict(turn)
+            if question_id:
+                item.setdefault("question_id", question_id)
+            flattened.append(item)
+    return flattened
 
 
 def _run_question_in_docker(
@@ -608,6 +622,7 @@ def _aggregate_attempt_record(
         "benchmark_incorrect_count": incorrect_count,
         "benchmark_error_count": error_count,
         "log_path": None,
+        "turn_usage": _flatten_question_turn_usage(question_results),
         "question_results": question_results,
     }
 
@@ -637,6 +652,13 @@ def run_docker_task_benchmark(
     run_id = uuid.uuid4().hex[:8]
     started_at = _utc_iso_now()
     started_perf = now_fn()
+    telemetry = TelemetryRecorder(
+        run_id=run_id,
+        started_at=started_at,
+        now_fn=now_fn,
+        origin_perf=started_perf,
+        source="docker_task",
+    )
     records: list[dict[str, Any]] = []
     console_lines: list[str] = []
     attempt_logs: list[dict[str, Any]] = []
@@ -657,10 +679,24 @@ def run_docker_task_benchmark(
     for phase, iteration in phases:
         attempt_started_at = _utc_iso_now()
         emit(f"  - {phase} #{iteration} ...")
+        attempt_span = telemetry.start_span(
+            "attempt",
+            phase=phase,
+            iteration=iteration,
+            benchmark_mode="docker_task",
+            benchmark_id=benchmark_spec.id,
+        )
         question_results: list[dict[str, Any]] = []
         question_log_entries: list[dict[str, Any]] = []
         for question in benchmark_spec.questions:
             emit(f"    * question={question.id}")
+            question_span = telemetry.start_span(
+                "question",
+                phase=phase,
+                iteration=iteration,
+                question_id=question.id,
+                benchmark_id=benchmark_spec.id,
+            )
             raw_result = _run_question_in_docker(
                 config=config,
                 selected_model=selected_model,
@@ -675,7 +711,10 @@ def run_docker_task_benchmark(
                     "payload": raw_result.get("_question_log") or {},
                 }
             )
-            question_results.append(_coerce_question_result(question, raw_result))
+            question_result = _coerce_question_result(question, raw_result)
+            host_wall_ms = question_span.finish(status=str(question_result.get("status") or "error"), metrics=question_result)
+            question_result["host_wall_ms"] = host_wall_ms
+            question_results.append(question_result)
         attempt_record = _aggregate_attempt_record(
             phase=phase,
             iteration=iteration,
@@ -683,6 +722,8 @@ def run_docker_task_benchmark(
             prompt_text=prompt_text,
             question_results=question_results,
         )
+        attempt_wall_ms = attempt_span.finish(status=str(attempt_record.get("status") or "error"), metrics=attempt_record)
+        attempt_record["attempt_wall_ms"] = attempt_wall_ms
         records.append(attempt_record)
         attempt_logs.append(
             {
@@ -710,7 +751,14 @@ def run_docker_task_benchmark(
             }
         )
         if config.runs.cooldown_sec > 0:
+            cooldown_span = telemetry.start_span(
+                "cooldown",
+                phase=phase,
+                iteration=iteration,
+                cooldown_sec=config.runs.cooldown_sec,
+            )
             sleep_fn(config.runs.cooldown_sec)
+            cooldown_span.finish(status="success", metrics={"cooldown_sec": config.runs.cooldown_sec})
 
     ended_at = _utc_iso_now()
     duration_sec = max(now_fn() - started_perf, 0.0)
@@ -747,6 +795,7 @@ def run_docker_task_benchmark(
         "config_path": str(config.config_path) if config.config_path else None,
         "records": records,
     }
+    run_data["telemetry"] = telemetry.build(ended_at=ended_at, duration_ms=duration_sec * 1000.0)
     run_data["summary"] = compute_run_summary(run_data)
     run_data["_log_bundle"] = {
         "console_lines": console_lines,

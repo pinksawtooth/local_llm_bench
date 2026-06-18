@@ -273,6 +273,11 @@ class HistoryTests(unittest.TestCase):
         self.assertEqual(record["conversation_prompt_tokens"], 300)
         self.assertEqual(record["conversation_prompt_latency_ms"], 50.0)
         self.assertAlmostEqual(record["conversation_prompt_tps"], 6000.0)
+        self.assertEqual(len(question["turn_usage"]), 2)
+        self.assertEqual(question["turn_usage"][0]["prompt_tokens"], 100)
+        self.assertAlmostEqual(question["turn_usage"][1]["elapsed_sec"], 0.04)
+        self.assertEqual(len(record["turn_usage"]), 2)
+        self.assertEqual(record["turn_usage"][0]["question_id"], "q1")
 
     def test_load_history_entries_backfills_prompt_speed_from_same_prompt_history(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

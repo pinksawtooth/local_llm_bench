@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from .error_utils import annotate_error_info
+from .telemetry import build_turn_usage_record, normalize_turn_usage_records
 
 
 PROMPT_TOKEN_FIELDS = (
@@ -165,6 +166,48 @@ def _prompt_metrics_from_trace(trace: Any) -> Dict[str, float | int]:
     return metrics
 
 
+def _turn_usage_from_trace(trace: Any) -> list[Dict[str, Any]]:
+    if not isinstance(trace, dict):
+        return []
+    raw_turns = trace.get("turns")
+    if not isinstance(raw_turns, list):
+        return []
+
+    records: list[Dict[str, Any]] = []
+    cumulative_prompt_tokens = 0
+    cumulative_completion_tokens = 0
+    for fallback_index, turn in enumerate(raw_turns, start=1):
+        if not isinstance(turn, dict):
+            continue
+        usage = turn.get("usage")
+        if not isinstance(usage, dict):
+            continue
+        prompt_tokens = _numeric_value(usage.get("prompt_tokens")) or 0
+        completion_tokens = _numeric_value(usage.get("completion_tokens")) or 0
+        total_tokens = _numeric_value(usage.get("total_tokens"))
+        cumulative_prompt_tokens += int(prompt_tokens)
+        cumulative_completion_tokens += int(completion_tokens)
+        turn_index = _numeric_value(turn.get("turn")) or fallback_index
+        request_latency_ms = _numeric_value(turn.get("request_latency_ms"))
+        records.append(
+            build_turn_usage_record(
+                source="trace",
+                turn_index=int(turn_index),
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=total_tokens if total_tokens is not None else int(prompt_tokens) + int(completion_tokens),
+                cumulative_prompt_tokens=cumulative_prompt_tokens,
+                cumulative_completion_tokens=cumulative_completion_tokens,
+                elapsed_sec=(
+                    request_latency_ms / 1000.0
+                    if request_latency_ms is not None and request_latency_ms > 0
+                    else None
+                ),
+            )
+        )
+    return records
+
+
 def _prompt_metrics_from_entry_payload(payload: Any) -> Dict[str, float | int]:
     if not isinstance(payload, dict):
         return {}
@@ -267,6 +310,23 @@ def _prompt_metrics_from_log_payload(payload: Any) -> Dict[str, float | int]:
     if metrics:
         return metrics
     return _prompt_metrics_from_trace(payload.get("trace"))
+
+
+def _turn_usage_from_log_payload(payload: Any) -> list[Dict[str, Any]]:
+    if not isinstance(payload, dict):
+        return []
+    parsed_worker_result = payload.get("parsed_worker_result")
+    if isinstance(parsed_worker_result, dict):
+        turns = normalize_turn_usage_records(parsed_worker_result.get("turn_usage"))
+        if turns:
+            return turns
+        turns = _turn_usage_from_trace(parsed_worker_result.get("trace"))
+        if turns:
+            return turns
+    turns = normalize_turn_usage_records(payload.get("turn_usage"))
+    if turns:
+        return turns
+    return _turn_usage_from_trace(payload.get("trace"))
 
 
 def _tool_metrics_from_trace(trace: Any) -> tuple[int | None, Dict[str, int]]:
@@ -407,6 +467,37 @@ def _apply_prompt_metrics_from_log_path(entry: Dict[str, Any], history_dir: Path
             continue
         value = metrics[field]
         entry[field] = int(value) if field.endswith("_tokens") else float(value)
+
+
+def _apply_turn_usage_from_log_path(entry: Dict[str, Any], history_dir: Path | None) -> None:
+    if normalize_turn_usage_records(entry.get("turn_usage")):
+        entry["turn_usage"] = normalize_turn_usage_records(entry.get("turn_usage"))
+        return
+    if history_dir is None:
+        return
+    log_path = entry.get("log_path")
+    if not isinstance(log_path, str) or not log_path.strip():
+        return
+    candidate = history_dir / log_path
+    try:
+        payload = json.loads(candidate.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+    turn_usage = _turn_usage_from_log_payload(payload)
+    if turn_usage:
+        entry["turn_usage"] = turn_usage
+
+
+def _flatten_question_turn_usage(question_results: list[Dict[str, Any]]) -> list[Dict[str, Any]]:
+    flattened: list[Dict[str, Any]] = []
+    for question_result in question_results:
+        question_id = str(question_result.get("question_id") or "")
+        for turn in normalize_turn_usage_records(question_result.get("turn_usage")):
+            item = dict(turn)
+            if question_id:
+                item.setdefault("question_id", question_id)
+            flattened.append(item)
+    return flattened
 
 
 def _apply_tool_metrics(
@@ -721,6 +812,7 @@ def normalize_run_entry(run_data: Dict[str, Any], history_dir: Path | None = Non
                 annotate_error_info(enriched_question_result)
                 _apply_tool_metrics_from_log_path(enriched_question_result, history_dir)
                 _apply_prompt_metrics_from_log_path(enriched_question_result, history_dir)
+                _apply_turn_usage_from_log_path(enriched_question_result, history_dir)
                 _apply_tool_metrics(enriched_question_result)
                 _apply_prompt_metrics(enriched_question_result)
                 enriched_question_results.append(enriched_question_result)
@@ -731,9 +823,14 @@ def normalize_run_entry(run_data: Dict[str, Any], history_dir: Path | None = Non
                 default_zero=str(enriched.get("benchmark_mode") or "").strip().lower() != "docker_task",
             )
             _apply_prompt_metrics(enriched, question_results=enriched_question_results)
+            if not normalize_turn_usage_records(enriched.get("turn_usage")):
+                flattened_turn_usage = _flatten_question_turn_usage(enriched_question_results)
+                if flattened_turn_usage:
+                    enriched["turn_usage"] = flattened_turn_usage
         else:
             _apply_tool_metrics_from_log_path(enriched, history_dir)
             _apply_prompt_metrics_from_log_path(enriched, history_dir)
+            _apply_turn_usage_from_log_path(enriched, history_dir)
             _apply_tool_metrics(
                 enriched,
                 default_zero=str(enriched.get("benchmark_mode") or "").strip().lower() != "docker_task",

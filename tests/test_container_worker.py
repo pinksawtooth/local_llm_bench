@@ -282,6 +282,13 @@ class ContainerWorkerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["conversation_prompt_tokens"], 300)
         self.assertEqual(result["conversation_prompt_latency_ms"], 50.0)
         self.assertAlmostEqual(result["conversation_prompt_tps"], 6000.0)
+        self.assertEqual(len(result["turn_usage"]), 2)
+        self.assertEqual(result["turn_usage"][0]["prompt_tokens"], 100)
+        self.assertEqual(result["turn_usage"][1]["completion_tokens"], 20)
+        self.assertAlmostEqual(result["turn_usage"][0]["elapsed_sec"], 0.01)
+        self.assertEqual(result["turn_usage"][1]["cumulative_total_tokens"], 330)
+        self.assertIn("prompt_breakdown", result["turn_usage"][0])
+        self.assertIn("tool_results", result["turn_usage"][1]["prompt_breakdown"]["categories"])
 
     async def test_run_question_uses_unsloth_auth_session_for_unsloth_provider(self) -> None:
         async def fake_open_mcp_stdio_session(**_: object):

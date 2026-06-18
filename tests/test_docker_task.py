@@ -113,6 +113,20 @@ class DockerTaskTests(unittest.TestCase):
                             "decode_tps": 50.0,
                             "end_to_end_tps": 40.0,
                             "approx_prompt_tps": 100.0,
+                            "turn_usage": [
+                                {
+                                    "source": "docker_worker",
+                                    "turn_index": 1,
+                                    "prompt_tokens": 10,
+                                    "completion_tokens": 20,
+                                    "total_tokens": 30,
+                                    "cumulative_prompt_tokens": 10,
+                                    "cumulative_completion_tokens": 20,
+                                    "cumulative_total_tokens": 30,
+                                    "elapsed_sec": 0.5,
+                                    "success": True,
+                                }
+                            ],
                         },
                         ensure_ascii=False,
                     ),
@@ -135,6 +149,13 @@ class DockerTaskTests(unittest.TestCase):
         self.assertFalse(record["benchmark_correct"])
         self.assertEqual(record["benchmark_incorrect_count"], 1)
         self.assertEqual(record["benchmark_error_count"], 0)
+        self.assertEqual(run_data["telemetry"]["source"], "docker_task")
+        self.assertEqual(run_data["telemetry"]["summary"]["attempt_count"], 1)
+        self.assertEqual(run_data["telemetry"]["summary"]["question_count"], 1)
+        self.assertEqual(len(record["question_results"][0]["turn_usage"]), 1)
+        self.assertEqual(record["question_results"][0]["turn_usage"][0]["prompt_tokens"], 10)
+        self.assertEqual(len(record["turn_usage"]), 1)
+        self.assertEqual(record["turn_usage"][0]["question_id"], "q1")
 
     def test_run_docker_task_benchmark_marks_timeout_as_error_metric(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

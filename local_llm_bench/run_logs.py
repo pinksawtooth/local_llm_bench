@@ -8,6 +8,7 @@ from typing import Any, Dict
 
 from .config import OutputSettings
 from .error_utils import annotate_error_info, merge_excerpts
+from .telemetry import normalize_turn_usage_records, telemetry_metrics_from_record
 
 _SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
 
@@ -112,6 +113,22 @@ def _apply_tool_metrics_from_question_payload(question_result: Dict[str, Any], q
         question_result["tool_name_counts"] = tool_name_counts
 
 
+def _apply_turn_usage_from_question_payload(question_result: Dict[str, Any], question_payload: Dict[str, Any]) -> None:
+    if normalize_turn_usage_records(question_result.get("turn_usage")):
+        question_result["turn_usage"] = normalize_turn_usage_records(question_result.get("turn_usage"))
+        return
+    parsed_worker_result = question_payload.get("parsed_worker_result")
+    turn_usage = (
+        normalize_turn_usage_records(parsed_worker_result.get("turn_usage"))
+        if isinstance(parsed_worker_result, dict)
+        else []
+    )
+    if not turn_usage:
+        turn_usage = normalize_turn_usage_records(question_payload.get("turn_usage"))
+    if turn_usage:
+        question_result["turn_usage"] = turn_usage
+
+
 def _apply_record_tool_metrics(record: Dict[str, Any]) -> None:
     question_results = _question_results(record)
     if not question_results:
@@ -138,6 +155,63 @@ def _apply_record_tool_metrics(record: Dict[str, Any]) -> None:
         record["tool_name_counts"] = merged_name_counts
 
 
+def _apply_record_turn_usage(record: Dict[str, Any]) -> None:
+    if normalize_turn_usage_records(record.get("turn_usage")):
+        record["turn_usage"] = normalize_turn_usage_records(record.get("turn_usage"))
+        return
+    flattened: list[Dict[str, Any]] = []
+    for question_result in _question_results(record):
+        question_id = str(question_result.get("question_id") or "")
+        for turn in normalize_turn_usage_records(question_result.get("turn_usage")):
+            item = dict(turn)
+            if question_id:
+                item.setdefault("question_id", question_id)
+            flattened.append(item)
+    if flattened:
+        record["turn_usage"] = flattened
+
+
+def _span_matches_record(span: Dict[str, Any], record: Dict[str, Any]) -> bool:
+    return (
+        str(span.get("phase") or "") == str(record.get("phase") or "")
+        and str(span.get("iteration") or "") == str(record.get("iteration") or "")
+    )
+
+
+def _sync_telemetry_span_metrics(run_data: Dict[str, Any], records: list[Dict[str, Any]]) -> None:
+    telemetry = run_data.get("telemetry")
+    if not isinstance(telemetry, dict):
+        return
+    raw_spans = telemetry.get("spans")
+    if not isinstance(raw_spans, list):
+        return
+
+    for span in raw_spans:
+        if not isinstance(span, dict):
+            continue
+        source_record: Dict[str, Any] | None = None
+        span_name = str(span.get("name") or "")
+        if span_name == "attempt":
+            source_record = next((record for record in records if _span_matches_record(span, record)), None)
+        elif span_name == "question":
+            question_id = str(span.get("question_id") or "")
+            for record in records:
+                if not _span_matches_record(span, record):
+                    continue
+                for question_result in _question_results(record):
+                    if str(question_result.get("question_id") or "") == question_id:
+                        source_record = question_result
+                        break
+                if source_record is not None:
+                    break
+        if source_record is None:
+            continue
+        metrics = span.get("metrics")
+        merged = dict(metrics) if isinstance(metrics, dict) else {}
+        merged.update(telemetry_metrics_from_record(source_record))
+        span["metrics"] = merged
+
+
 def persist_run_logs(output: OutputSettings, run_data: Dict[str, Any]) -> Dict[str, Any]:
     bundle = run_data.pop("_log_bundle", None)
     records = [item for item in run_data.get("records", []) if isinstance(item, dict)]
@@ -147,6 +221,7 @@ def persist_run_logs(output: OutputSettings, run_data: Dict[str, Any]) -> Dict[s
         for question_result in _question_results(record):
             annotate_error_info(question_result)
         _apply_record_tool_metrics(record)
+        _apply_record_turn_usage(record)
 
     if not isinstance(bundle, dict):
         return run_data
@@ -192,6 +267,7 @@ def persist_run_logs(output: OutputSettings, run_data: Dict[str, Any]) -> Dict[s
                 question_rel = _relative_to_history(output, question_path)
                 question_result["log_path"] = question_rel
                 _apply_tool_metrics_from_question_payload(question_result, question_payload)
+                _apply_turn_usage_from_question_payload(question_result, question_payload)
                 annotate_error_info(
                     question_result,
                     stderr_text=question_payload.get("stderr"),
@@ -205,6 +281,7 @@ def persist_run_logs(output: OutputSettings, run_data: Dict[str, Any]) -> Dict[s
                     }
                 )
 
+        _apply_record_turn_usage(record)
         attempt_payload = dict(attempt.get("payload") or {})
         attempt_payload["question_logs"] = question_entries
         attempt_path = attempts_dir / _attempt_filename(phase, iteration)
@@ -229,6 +306,8 @@ def persist_run_logs(output: OutputSettings, run_data: Dict[str, Any]) -> Dict[s
             }
         )
 
+    _sync_telemetry_span_metrics(run_data, records)
+
     manifest = {
         "version": 1,
         "run_id": run_id,
@@ -243,6 +322,9 @@ def persist_run_logs(output: OutputSettings, run_data: Dict[str, Any]) -> Dict[s
         "console_log": _relative_to_history(output, console_path),
         "attempts": manifest_attempts,
     }
+    telemetry = run_data.get("telemetry")
+    if isinstance(telemetry, dict) and isinstance(telemetry.get("summary"), dict):
+        manifest["telemetry_summary"] = telemetry.get("summary")
     manifest_path = run_dir / "manifest.json"
     _write_json(manifest_path, manifest)
     run_data["log_dir"] = _relative_to_history(output, run_dir)

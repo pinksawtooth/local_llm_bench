@@ -95,6 +95,27 @@ class RunLogsTests(unittest.TestCase):
                         ],
                     }
                 ],
+                "telemetry": {
+                    "version": 1,
+                    "summary": {"attempt_count": 1, "question_count": 1},
+                    "spans": [
+                        {
+                            "name": "attempt",
+                            "phase": "warm",
+                            "iteration": 1,
+                            "status": "error",
+                            "metrics": {},
+                        },
+                        {
+                            "name": "question",
+                            "phase": "warm",
+                            "iteration": 1,
+                            "question_id": "q1",
+                            "status": "error",
+                            "metrics": {},
+                        },
+                    ],
+                },
                 "_log_bundle": {
                     "console_lines": ["[Run docker-demo] model=demo-model"],
                     "attempts": [
@@ -113,6 +134,23 @@ class RunLogsTests(unittest.TestCase):
                                         "parsed_worker_result": {
                                             "status": "error",
                                             "error": "worker returned malformed JSON",
+                                            "turn_usage": [
+                                                {
+                                                    "source": "docker_worker",
+                                                    "turn_index": 1,
+                                                    "prompt_tokens": 8,
+                                                    "completion_tokens": 0,
+                                                    "total_tokens": 8,
+                                                    "cumulative_prompt_tokens": 8,
+                                                    "cumulative_completion_tokens": 0,
+                                                    "cumulative_total_tokens": 8,
+                                                    "elapsed_sec": 0.25,
+                                                    "success": False,
+                                                    "timed_out": False,
+                                                    "error_type": "api_error",
+                                                    "error_message": "worker returned malformed JSON",
+                                                }
+                                            ],
                                             "trace": {
                                                 "turns": [
                                                     {
@@ -147,4 +185,10 @@ class RunLogsTests(unittest.TestCase):
                 {"mecha_ghidra.list_functions": 2, "run_python": 1},
             )
             self.assertEqual(persisted["records"][0]["tool_call_count"], 3)
+            self.assertEqual(len(persisted["records"][0]["question_results"][0]["turn_usage"]), 1)
+            self.assertFalse(persisted["records"][0]["question_results"][0]["turn_usage"][0]["success"])
+            self.assertEqual(len(persisted["records"][0]["turn_usage"]), 1)
+            self.assertEqual(persisted["records"][0]["turn_usage"][0]["question_id"], "q1")
+            self.assertEqual(persisted["telemetry"]["spans"][0]["metrics"]["tool_call_count"], 3)
+            self.assertEqual(persisted["telemetry"]["spans"][1]["metrics"]["tool_call_count"], 3)
             self.assertEqual(question_payload["parsed_worker_result"]["trace"]["turns"][0]["turn"], 1)
