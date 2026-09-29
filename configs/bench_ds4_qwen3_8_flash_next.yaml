@@ -1,0 +1,41 @@
+# Thinking sampling: https://huggingface.co/Qwen/Qwen3.8-Flash-Next
+# MTP: https://github.com/antirez/ds4/blob/main/docs/QWEN38_FLASH_NEXT.md
+# GGUFのダウンロード完了後に実行。context/output上限はローカルベンチ用。
+provider: ds4
+mode: prompt
+api_base: "http://127.0.0.1:8001/v1"
+models:
+  - "qwen3.8-flash-next"
+
+# ds4公式 qwen38-q2 GGUF（MTP内蔵）。パスはこのYAMLからの相対指定。
+# 開始時に起動・ロードし、終了時に自分のプロセスだけを停止します。
+ds4:
+  management: managed
+  server_path: "../../RevBench/ds4/ds4-server"
+  model_path: "../../RevBench/ds4/gguf/Qwen3.8-Flash-Next-Q2.gguf"
+  context_length: 262144
+  startup_timeout_sec: 1200
+  server_args: ["--mtp", "--mtp-exact-sampling", "--prefill-chunk", "1024"]
+
+ds4_sampling:
+  source: model_config
+  temperature: 1.0
+  top_p: 0.95
+  top_k: 20
+  min_p: 0.0
+
+request:
+  max_tokens: 8192
+  reasoning_effort: xhigh
+
+runs:
+  cold_runs: 1
+  warm_runs: 3
+  timeout_sec: 86400
+  cooldown_sec: 0
+
+output:
+  history_json: "../runs/history.json"
+  latest_json: "../runs/latest_run.json"
+  report_html: "../docs/index.html"
+  run_logs_dir: "../runs/logs"

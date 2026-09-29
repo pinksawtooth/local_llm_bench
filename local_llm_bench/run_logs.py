@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 from .config import OutputSettings
+from .persistence import atomic_write_json
 from .error_utils import annotate_error_info, merge_excerpts
 from .telemetry import normalize_turn_usage_records, telemetry_metrics_from_record
 
@@ -23,7 +24,7 @@ def _relative_to_history(output: OutputSettings, target: Path) -> str:
 
 def _write_json(path: Path, payload: Dict[str, Any]) -> None:
     _ensure_parent(path)
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    atomic_write_json(path, payload)
 
 
 def _sanitize_name(value: str) -> str:
@@ -263,6 +264,8 @@ def persist_run_logs(output: OutputSettings, run_data: Dict[str, Any]) -> Dict[s
                 question_id = str(question_result.get("question_id") or question_log.get("question_id") or f"q{question_index + 1}")
                 question_path = questions_dir / _question_filename(phase, iteration, question_id)
                 question_payload = dict(question_log.get("payload") or {})
+                if question_result.get("measurement"):
+                    question_payload["measurement"] = question_result["measurement"]
                 _write_json(question_path, question_payload)
                 question_rel = _relative_to_history(output, question_path)
                 question_result["log_path"] = question_rel
@@ -283,8 +286,16 @@ def persist_run_logs(output: OutputSettings, run_data: Dict[str, Any]) -> Dict[s
 
         _apply_record_turn_usage(record)
         attempt_payload = dict(attempt.get("payload") or {})
+        if record.get("measurement"):
+            attempt_payload["measurement"] = record["measurement"]
         attempt_payload["question_logs"] = question_entries
-        attempt_path = attempts_dir / _attempt_filename(phase, iteration)
+        if record.get("sample_id"):
+            # Multiple length/concurrency samples share a phase and iteration.
+            import hashlib
+            suffix = hashlib.sha256(str(record["sample_id"]).encode()).hexdigest()[:20]
+            attempt_path = attempts_dir / f"{_sanitize_name(phase)}-{iteration}-{suffix}.json"
+        else:
+            attempt_path = attempts_dir / _attempt_filename(phase, iteration)
         _write_json(attempt_path, attempt_payload)
         attempt_rel = _relative_to_history(output, attempt_path)
         record["log_path"] = attempt_rel
@@ -298,6 +309,7 @@ def persist_run_logs(output: OutputSettings, run_data: Dict[str, Any]) -> Dict[s
         manifest_attempts.append(
             {
                 "phase": phase,
+                "sample_id": record.get("sample_id"),
                 "iteration": iteration,
                 "status": record.get("status"),
                 "log_path": attempt_rel,
@@ -322,6 +334,9 @@ def persist_run_logs(output: OutputSettings, run_data: Dict[str, Any]) -> Dict[s
         "console_log": _relative_to_history(output, console_path),
         "attempts": manifest_attempts,
     }
+    for field in ("status", "conditions", "comparison", "timings", "preflight", "lifecycle", "execution_segments"):
+        if field in run_data:
+            manifest[field] = run_data[field]
     telemetry = run_data.get("telemetry")
     if isinstance(telemetry, dict) and isinstance(telemetry.get("summary"), dict):
         manifest["telemetry_summary"] = telemetry.get("summary")

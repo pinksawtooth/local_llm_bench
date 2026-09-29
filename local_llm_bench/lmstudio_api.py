@@ -1,22 +1,15 @@
 from __future__ import annotations
 
 import json
+import math
 import urllib.error
 import urllib.request
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Any, Callable, Iterable, Optional
 
 
 class LMStudioAPIError(RuntimeError):
     """Raised when the LM Studio API call or stream parsing fails."""
-
-
-CONTINUATION_PROMPT = (
-    "直前の回答の続きを出力してください。"
-    "すでに出した文章やコードは繰り返さず、途切れた箇所からそのまま続けてください。"
-    "コードブロックが開いている場合は閉じるところまで出力してください。"
-)
-MAX_CONTINUATION_ROUNDS = 8
 
 
 @dataclass
@@ -39,6 +32,10 @@ class StreamResult:
     end_to_end_tps: Optional[float]
     approx_prompt_tps: Optional[float]
     finish_reason: Optional[str]
+    raw_usage: dict[str, Any] = field(default_factory=dict)
+    raw_timings: dict[str, Any] = field(default_factory=dict)
+    raw_stats: dict[str, Any] = field(default_factory=dict)
+    message: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -54,9 +51,11 @@ def _completion_url(api_base: str) -> str:
 def _safe_token_count(value: Any) -> Optional[int]:
     if value in (None, ""):
         return None
+    if isinstance(value, bool) or (isinstance(value, float) and (not math.isfinite(value) or not value.is_integer())):
+        return None
     try:
         normalized = int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
     return normalized if normalized >= 0 else None
 
@@ -65,18 +64,6 @@ def _compute_tps(token_count: Optional[int], window_ms: Optional[float]) -> Opti
     if token_count is None or token_count <= 0 or window_ms is None or window_ms <= 0:
         return None
     return token_count / (window_ms / 1000.0)
-
-
-def _sum_optional_int(current: Optional[int], value: Optional[int]) -> Optional[int]:
-    if value is None:
-        return current
-    return value if current is None else current + value
-
-
-def _sum_optional_float(current: Optional[float], value: Optional[float]) -> Optional[float]:
-    if value is None:
-        return current
-    return value if current is None else current + value
 
 
 TEXT_FIELD_NAMES = (
@@ -108,18 +95,6 @@ METADATA_FIELD_NAMES = {
     "arguments",
     "name",
 }
-
-
-def _merge_text(existing: str, addition: str) -> str:
-    if not addition:
-        return existing
-    if not existing:
-        return addition
-    max_overlap = min(len(existing), len(addition), 512)
-    for overlap in range(max_overlap, 0, -1):
-        if existing.endswith(addition[:overlap]):
-            return existing + addition[overlap:]
-    return existing + addition
 
 
 def _extract_text_parts(value: Any, *, _seen: Optional[set[int]] = None) -> list[str]:
@@ -197,6 +172,38 @@ def _payload_debug_summary(payload: dict[str, Any]) -> str:
     return f"keys=[{keys}] payload={excerpt}"
 
 
+def _merge_tool_calls(fragments: Any, state: dict, now_ts: float) -> None:
+    if not isinstance(fragments, list):
+        return
+    calls = state.setdefault("tool_calls", {})
+    for position, fragment in enumerate(fragments):
+        if not isinstance(fragment, dict):
+            continue
+        index = fragment.get("index", position)
+        if isinstance(index, bool) or not isinstance(index, int) or index < 0:
+            raise LMStudioAPIError("Invalid streamed tool-call index")
+        call = calls.setdefault(index, {"type": "function", "function": {"name": "", "arguments": ""}})
+        for key in ("id", "type"):
+            if fragment.get(key):
+                call[key] = fragment[key]
+        function = fragment.get("function") or {}
+        for key in ("name", "arguments"):
+            value = function.get(key)
+            if isinstance(value, str) and value:
+                call["function"][key] += value
+                if state["first_output_ts"] is None:
+                    state["first_output_ts"] = now_ts
+
+
+def _assistant_message(state: dict, content: list[str], reasoning: list[str]) -> dict:
+    message = {**state.get("message_fields", {}), "role": "assistant", "content": "".join(content)}
+    if reasoning:
+        message[state.get("reasoning_field", "reasoning_content")] = "".join(reasoning)
+    if state.get("tool_calls"):
+        message["tool_calls"] = [state["tool_calls"][index] for index in sorted(state["tool_calls"])]
+    return message
+
+
 def _process_payload(
     payload: dict[str, Any],
     *,
@@ -210,6 +217,20 @@ def _process_payload(
         for choice in choices:
             if not isinstance(choice, dict):
                 continue
+            if choice.get("index", 0) != 0:
+                continue
+            delta = choice.get("delta") or choice.get("message") or {}
+            if isinstance(delta, dict):
+                _merge_tool_calls(delta.get("tool_calls"), state, now_ts)
+                # Preserve provider fields needed on the next conversation turn.
+                for key, value in delta.items():
+                    if key in {"role", "content", "tool_calls", *TEXT_FIELD_NAMES}:
+                        continue
+                    state.setdefault("message_fields", {})[key] = value
+                for key in ("reasoning_content", "reasoning", "reasoning_text", "summary"):
+                    if _extract_text_parts(delta.get(key)):
+                        state["reasoning_field"] = key
+                        break
             _append_parts(
                 _extract_choice_text(choice, "content"),
                 content_chunks,
@@ -261,9 +282,13 @@ def _process_payload(
 
     usage = payload.get("usage")
     if isinstance(usage, dict):
-        state["prompt_tokens"] = _safe_token_count(usage.get("prompt_tokens"))
-        state["completion_tokens"] = _safe_token_count(usage.get("completion_tokens"))
-        state["total_tokens"] = _safe_token_count(usage.get("total_tokens"))
+        state.setdefault("raw_usage", {}).update(usage)
+        for key in ("prompt_tokens", "completion_tokens", "total_tokens"):
+            if key in usage:
+                state[key] = _safe_token_count(usage[key])
+    for key in ("timings", "stats"):
+        if isinstance(payload.get(key), dict):
+            state.setdefault("raw_" + key, {}).update(payload[key])
 
 
 def consume_sse_stream(
@@ -299,6 +324,8 @@ def consume_sse_stream(
             raise LMStudioAPIError(f"SSE JSONの解析に失敗しました: {raw_event[:200]}") from exc
         if not isinstance(payload, dict):
             raise LMStudioAPIError("SSEイベントがJSONオブジェクトではありません。")
+        if payload.get("error"):
+            raise LMStudioAPIError(f"Stream error: {payload['error']}")
         _process_payload(
             payload,
             now_ts=now_ts,
@@ -324,7 +351,7 @@ def consume_sse_stream(
         flush_event()
 
     ended_at = now_fn()
-    if not content_chunks and not reasoning_chunks:
+    if not content_chunks and not reasoning_chunks and not state.get("tool_calls"):
         raise LMStudioAPIError("empty streamed response")
 
     ttft_ms = None
@@ -360,6 +387,10 @@ def consume_sse_stream(
         end_to_end_tps=_compute_tps(completion_tokens, total_latency_ms),
         approx_prompt_tps=_compute_tps(prompt_tokens, ttft_ms),
         finish_reason=state["finish_reason"],
+        raw_usage=state.get("raw_usage", {}),
+        raw_timings=state.get("raw_timings", {}),
+        raw_stats=state.get("raw_stats", {}),
+        message=_assistant_message(state, content_chunks, reasoning_chunks),
     )
 
 
@@ -385,7 +416,7 @@ def _non_stream_payload_to_result(
         reasoning_chunks=reasoning_chunks,
         state=state,
     )
-    if not content_chunks and not reasoning_chunks:
+    if not content_chunks and not reasoning_chunks and not state.get("tool_calls"):
         raise LMStudioAPIError(f"empty completion response: {_payload_debug_summary(payload)}")
     total_latency_ms = max((ended_at - started_at) * 1000.0, 0.0)
     response_text = "".join(content_chunks) or "".join(reasoning_chunks)
@@ -409,6 +440,10 @@ def _non_stream_payload_to_result(
         end_to_end_tps=_compute_tps(state["completion_tokens"], total_latency_ms),
         approx_prompt_tps=None,
         finish_reason=state["finish_reason"],
+        raw_usage=state.get("raw_usage", {}),
+        raw_timings=state.get("raw_timings", {}),
+        raw_stats=state.get("raw_stats", {}),
+        message=_assistant_message(state, content_chunks, reasoning_chunks),
     )
 
 
@@ -453,20 +488,41 @@ def _request_once(
     api_base: str,
     model: str,
     messages: list[dict[str, str]],
-    temperature: float,
-    max_tokens: int,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
     timeout_sec: float,
     now_fn: Callable[[], float],
     urlopen: Callable[..., Any] = urllib.request.urlopen,
+    top_p: float | None = None,
+    reasoning_effort: str | None = None,
+    top_k: int | None = None,
+    min_p: float | None = None,
+    seed: int | None = None,
 ) -> StreamResult:
+    optional = {key: value for key, value in {"temperature": temperature, "max_tokens": max_tokens, "top_p": top_p,
+                "reasoning_effort": reasoning_effort, "top_k": top_k, "min_p": min_p, "seed": seed}.items() if value is not None}
     payload = {
+        **optional,
         "model": model,
         "messages": messages,
-        "temperature": temperature,
-        "max_tokens": max_tokens,
         "stream": True,
         "stream_options": {"include_usage": True},
     }
+    return request_chat_completion(api_base=api_base, body=payload, timeout_sec=timeout_sec,
+                                   now_fn=now_fn, urlopen=urlopen)
+
+
+def request_chat_completion(
+    *, api_base: str, body: dict[str, Any], timeout_sec: float,
+    now_fn: Callable[[], float], urlopen: Callable[..., Any] = urllib.request.urlopen,
+) -> StreamResult:
+    """One measured streaming request, shared by prompt, performance and tasks.
+
+    Re-sending an empty stream as JSON both repeats the trial and loses TTFT.
+    Treat a server that does not stream as a transport error instead.
+    """
+    payload = {**body, "stream": True,
+               "stream_options": {**(body.get("stream_options") or {}), "include_usage": True}}
     request = urllib.request.Request(
         _completion_url(api_base),
         data=json.dumps(payload).encode("utf-8"),
@@ -484,11 +540,11 @@ def _request_once(
                 status = response.getcode()
             if isinstance(status, int) and status >= 400:
                 raise LMStudioAPIError(f"HTTP {status}")
-            try:
-                return consume_sse_stream(response, started_at=start_ts, now_fn=now_fn)
-            except LMStudioAPIError as exc:
-                if str(exc) != "empty streamed response":
-                    raise
+            headers = getattr(response, "headers", {})
+            content_type = str(headers.get("Content-Type", "")).split(";", 1)[0].strip().lower()
+            if content_type == "application/json" or content_type.endswith("+json"):
+                raise LMStudioAPIError("Server returned non-streaming JSON; streaming is required to measure TTFT/TPOT")
+            return consume_sse_stream(response, started_at=start_ts, now_fn=now_fn)
     except urllib.error.HTTPError as exc:
         try:
             body = exc.read().decode("utf-8", errors="replace").strip()
@@ -500,43 +556,25 @@ def _request_once(
         reason = getattr(exc, "reason", exc)
         raise LMStudioAPIError(f"接続に失敗しました: {reason}") from exc
 
-    fallback_payload = {
-        "model": model,
-        "messages": messages,
-        "temperature": temperature,
-        "max_tokens": max_tokens,
-        "stream": False,
-    }
-    fallback_request = urllib.request.Request(
-        _completion_url(api_base),
-        data=json.dumps(fallback_payload).encode("utf-8"),
-        headers={
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        },
-        method="POST",
-    )
-    return _request_json(
-        fallback_request,
-        timeout_sec=timeout_sec,
-        now_fn=now_fn,
-        urlopen=urlopen,
-    )
-
 
 def stream_chat_completion(
     *,
     api_base: str,
     model: str,
     prompt_text: str,
-    temperature: float,
-    max_tokens: int,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
     timeout_sec: float,
     now_fn: Callable[[], float],
     urlopen: Callable[..., Any] = urllib.request.urlopen,
+    top_p: float | None = None,
+    reasoning_effort: str | None = None,
+    top_k: int | None = None,
+    min_p: float | None = None,
+    seed: int | None = None,
 ) -> StreamResult:
     messages = [{"role": "user", "content": prompt_text}]
-    result = _request_once(
+    return _request_once(
         api_base=api_base,
         model=model,
         messages=messages,
@@ -545,90 +583,9 @@ def stream_chat_completion(
         timeout_sec=timeout_sec,
         now_fn=now_fn,
         urlopen=urlopen,
-    )
-
-    total_response_text = result.response_text
-    total_reasoning_text = result.reasoning_text
-    total_latency_ms = result.total_latency_ms
-    ttft_ms = result.ttft_ms
-    prompt_tokens = result.prompt_tokens
-    approx_prompt_tps = result.approx_prompt_tps
-    initial_prompt_tokens = result.initial_prompt_tokens
-    initial_prompt_latency_ms = result.initial_prompt_latency_ms
-    initial_prompt_tps = result.initial_prompt_tps
-    conversation_prompt_tokens = result.conversation_prompt_tokens
-    conversation_prompt_latency_ms = result.conversation_prompt_latency_ms
-    completion_tokens = result.completion_tokens
-    final_finish_reason = result.finish_reason
-    current_completion_tokens = result.completion_tokens or 0
-
-    for _ in range(MAX_CONTINUATION_ROUNDS):
-        if final_finish_reason != "length":
-            break
-        if completion_tokens is None:
-            break
-        remaining_tokens = max_tokens - current_completion_tokens
-        if remaining_tokens <= 0:
-            break
-        continuation_source = total_response_text or total_reasoning_text
-        if not continuation_source.strip():
-            break
-
-        messages = [
-            {"role": "user", "content": prompt_text},
-            {"role": "assistant", "content": continuation_source},
-            {"role": "user", "content": CONTINUATION_PROMPT},
-        ]
-        next_result = _request_once(
-            api_base=api_base,
-            model=model,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=remaining_tokens,
-            timeout_sec=timeout_sec,
-            now_fn=now_fn,
-            urlopen=urlopen,
-        )
-        total_response_text = _merge_text(total_response_text, next_result.response_text)
-        total_reasoning_text = _merge_text(total_reasoning_text, next_result.reasoning_text)
-        total_latency_ms += next_result.total_latency_ms
-        conversation_prompt_tokens = _sum_optional_int(
-            conversation_prompt_tokens,
-            next_result.conversation_prompt_tokens,
-        )
-        conversation_prompt_latency_ms = _sum_optional_float(
-            conversation_prompt_latency_ms,
-            next_result.conversation_prompt_latency_ms,
-        )
-        current_completion_tokens += next_result.completion_tokens or 0
-        completion_tokens = current_completion_tokens if next_result.completion_tokens is not None else None
-        final_finish_reason = next_result.finish_reason
-
-    completion_window_ms = None
-    if ttft_ms is not None:
-        completion_window_ms = max(total_latency_ms - ttft_ms, 0.0)
-
-    total_tokens = None
-    if prompt_tokens is not None and completion_tokens is not None:
-        total_tokens = prompt_tokens + completion_tokens
-
-    return StreamResult(
-        response_text=total_response_text,
-        reasoning_text=total_reasoning_text,
-        ttft_ms=ttft_ms,
-        total_latency_ms=total_latency_ms,
-        completion_window_ms=completion_window_ms,
-        prompt_tokens=prompt_tokens,
-        initial_prompt_tokens=initial_prompt_tokens,
-        initial_prompt_latency_ms=initial_prompt_latency_ms,
-        initial_prompt_tps=initial_prompt_tps,
-        conversation_prompt_tokens=conversation_prompt_tokens,
-        conversation_prompt_latency_ms=conversation_prompt_latency_ms,
-        conversation_prompt_tps=_compute_tps(conversation_prompt_tokens, conversation_prompt_latency_ms),
-        completion_tokens=completion_tokens,
-        total_tokens=total_tokens,
-        decode_tps=_compute_tps(completion_tokens, completion_window_ms),
-        end_to_end_tps=_compute_tps(completion_tokens, total_latency_ms),
-        approx_prompt_tps=approx_prompt_tps,
-        finish_reason=final_finish_reason,
+        top_p=top_p,
+        reasoning_effort=reasoning_effort,
+        top_k=top_k,
+        min_p=min_p,
+        seed=seed,
     )

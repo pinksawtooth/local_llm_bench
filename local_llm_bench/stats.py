@@ -6,6 +6,7 @@ from statistics import mean, median, pstdev
 from typing import Any, Dict, Iterable, Optional
 
 from .history import normalize_run_entry
+from .conditions import digest
 
 
 COMMON_METRICS = (
@@ -207,7 +208,12 @@ def _best_model(
 def _summary_payload_from_records(records: list[Dict[str, Any]]) -> Dict[str, Any]:
     grouped: dict[str, list[Dict[str, Any]]] = defaultdict(list)
     for record in records:
-        grouped[str(record.get("model") or "(unknown)")].append(record)
+        key = str(record.get("model") or "(unknown)")
+        if record.get("benchmark_mode") == "performance":
+            key += " [" + digest({name: record.get(name) for name in (
+                "target_input_tokens", "concurrency_requested", "concurrency_actual", "phase", "measurement")}
+                | {"sources": (record.get("metrics") or {}).get("sources")})[:12] + "]"
+        grouped[key].append(record)
 
     model_summaries = [
         _build_model_summary(model, model_records)
@@ -265,11 +271,13 @@ def compute_history_summary(history_entries: list[Dict[str, Any]]) -> Dict[str, 
         if isinstance(entry, dict)
     ]
     flat_records: list[Dict[str, Any]] = []
-    for run in normalized_runs:
-        flat_records.extend(
-            record for record in run.get("records", [])
-            if isinstance(record, dict)
-        )
+    for index, run in enumerate(normalized_runs):
+        if run.get("status") not in (None, "completed"):
+            continue
+        group = (run.get("comparison") or {}).get("group_id") or f"legacy:{run.get('run_id') or index}"
+        for record in run.get("records", []):
+            if isinstance(record, dict) and not record.get("partial"):
+                flat_records.append({**record, "model": f"{record.get('model') or run['model']} [{group}]"})
 
     summary = _summary_payload_from_records(flat_records)
     summary["total_runs"] = len(normalized_runs)

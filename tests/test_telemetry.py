@@ -126,7 +126,7 @@ class TelemetryTests(unittest.TestCase):
         self.assertFalse(failed["success"])
         self.assertTrue(failed["timed_out"])
         self.assertEqual(failed["error_type"], "timeout")
-        self.assertEqual(failed["completion_tokens_per_sec"], 0.0)
+        self.assertIsNone(failed.get("completion_tokens_per_sec"))
 
 
 if __name__ == "__main__":

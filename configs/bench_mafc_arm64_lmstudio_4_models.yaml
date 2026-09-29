@@ -1,0 +1,39 @@
+# bench_lmstudio_4_models.yaml と同じ4モデル・保存済み推論設定でMAFCを評価。
+# 初回準備: ./build_bench_image.sh --platform linux/arm64 --tag local-llm-bench:inspect-v1
+provider: lmstudio
+mode: docker_task
+api_base: "http://localhost:1234/v1"
+# 2026-09-14: LM Studioのローカル索引とモデルファイルで確認した4モデル。
+# 記載順に各モデルをロード・測定・アンロードします。
+models:
+  - "qwopus3.8-27b-flash"
+  - "qwen3.8-flash-next"
+  - "muse-glimmer-30b"
+  - "gemma-4-31b-it-qat"
+
+benchmark:
+  spec: "../benchmarks/mafc/spec.yaml"
+  answer_key: "../benchmarks/mafc/spec.answers.yaml"
+  question_timeout_sec: 3600
+  ghidra_tool_mode: unrestricted
+
+docker:
+  image: "local-llm-bench:inspect-v1"
+  platform: "linux/arm64"
+  api_base: "http://host.docker.internal:1234/v1"
+
+request:
+  # 出力上限・温度・サンプリング・思考設定はLM Studioの保存設定を使用。
+  use_lmstudio_defaults: true
+
+runs:
+  cold_runs: 1
+  warm_runs: 3
+  timeout_sec: 43200
+  cooldown_sec: 0
+
+output:
+  history_json: "../runs/history.json"
+  latest_json: "../runs/latest_run.json"
+  report_html: "../docs/index.html"
+  run_logs_dir: "../runs/logs"

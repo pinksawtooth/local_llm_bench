@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 
 
-def render_report_html(history_url: str) -> str:
+def render_report_html(history_url: str, *, inspect_api_url: str | None = None) -> str:
     template = """<!doctype html>
 <html lang="ja">
 <head>
@@ -32,6 +32,13 @@ def render_report_html(history_url: str) -> str:
       --mono: "JetBrains Mono", "Fira Code", "SF Mono", monospace;
     }
     * { box-sizing: border-box; }
+    .inspect-frame { width: 100%; height: 78vh; min-height: 560px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-primary); }
+    .inspect-controls { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 14px 0; }
+    .inspect-controls select { flex: 1; min-width: 240px; max-width: 100%; }
+    .inspect-context { overflow-wrap: anywhere; }
+    .inspect-link { margin: 4px; }
+    #leaderboard-table td:nth-child(n+5) { white-space: nowrap; }
+    #leaderboard-table .inspect-link { font-size: 11px; padding: 5px 8px; }
     body {
       margin: 0;
       min-height: 100vh;
@@ -162,6 +169,9 @@ def render_report_html(history_url: str) -> str:
       flex-wrap: wrap;
       margin-bottom: 20px;
     }
+    #compare-panel .toolbar select { max-width: 100%; min-width: 0; }
+    #compare-left-model, #compare-right-model { flex: 1 1 280px; width: 280px; }
+    #compare-table, #comparison-conditions table { table-layout: fixed; overflow-wrap: anywhere; }
     .leaderboard-toolbar {
       align-items: center;
       justify-content: space-between;
@@ -284,6 +294,15 @@ def render_report_html(history_url: str) -> str:
       flex-wrap: wrap;
       gap: 6px;
     }
+    .provider-badge { white-space: nowrap; }
+    .provider-lmstudio { color: #a8d5ff; background: #19394d; border-color: #416c89; }
+    .provider-ds4 { color: #e2c5ff; background: #3c2851; border-color: #785897; }
+    .provider-omlx { color: #a7eee1; background: #163d38; border-color: #43887c; }
+    .provider-mlx_serve { color: #ffd9a8; background: #4a3419; border-color: #8f6a3a; }
+    .model-name { font-weight: 600; overflow-wrap: anywhere; }
+    .model-caption { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 5px; color: var(--muted); font-size: 12px; }
+    .provider-unsloth_studio { color: #b0e4bf; background: #223e2b; border-color: #4b7959; }
+    .provider-unknown { color: var(--muted); }
     .load-state-error {
       color: #ffd6d6;
     }
@@ -300,12 +319,14 @@ def render_report_html(history_url: str) -> str:
       color: var(--muted);
       font-weight: 600;
       border-bottom: 1px solid var(--border);
-      cursor: pointer;
       user-select: none;
     }
-    th:hover { color: var(--text); }
-    th.sort-asc::after { content: " ▲"; font-size: 10px; }
-    th.sort-desc::after { content: " ▼"; font-size: 10px; }
+    th[data-sort], th button[data-sort] { cursor: pointer; }
+    th button[data-sort] { background: none; border: 0; padding: 0; color: inherit; font: inherit; text-transform: inherit; letter-spacing: inherit; }
+    [data-sort]:hover, [data-sort]:focus-visible { color: var(--text); }
+    [data-sort]:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+    [data-sort].sort-asc::after { content: " ▲"; font-size: 10px; }
+    [data-sort].sort-desc::after { content: " ▼"; font-size: 10px; }
     td {
       padding: 16px 12px;
       font-size: 14px;
@@ -1097,7 +1118,7 @@ def render_report_html(history_url: str) -> str:
         <div class="tag" id="history-source"></div>
         <div class="muted" id="load-state"></div>
       </div>
-      <div class="table-note">`index.html` は `history.json` を読み込むビュアーとして動作します。自動読込に失敗した場合は `Open history.json` から手動で選択できます。</div>
+      <div class="table-note">モデル比較は保存済みの履歴、会話・採点の詳細は Inspect Logs で確認できます。Run Details の各問題から対応するログを開けます。</div>
     </div>
 
     <div class="stat-grid" id="stats"></div>
@@ -1116,9 +1137,10 @@ def render_report_html(history_url: str) -> str:
         <button class="tab" data-tab="compare">Compare</button>
         <button class="tab" data-tab="coldwarm">Cold vs Warm</button>
         <button class="tab" data-tab="stability">Stability</button>
-        <button class="tab" data-tab="telemetry">Telemetry</button>
+        <button class="tab" data-tab="telemetry">Timing Analysis</button>
         <button class="tab" data-tab="errors">Error Analysis</button>
         <button class="tab" data-tab="details">Run Details</button>
+        <button class="tab" data-tab="inspect">Inspect Logs</button>
       </div>
 
     <div id="leaderboard-panel" class="card">
@@ -1137,28 +1159,28 @@ def render_report_html(history_url: str) -> str:
           <div class="filter-meta" id="leaderboard-filter-meta"></div>
         </div>
       </div>
-      <table id="leaderboard-table">
-        <thead>
-          <tr>
-            <th data-sort="model">Model</th>
-            <th data-sort="format_sort">Format</th>
-            <th data-sort="quantization_sort">Quantization</th>
-            <th data-sort="total_samples">Samples</th>
-            <th data-sort="success_rate">Success</th>
-            <th data-sort="warm_mean_benchmark_score" data-benchmark-column="true">Warm Score</th>
-            <th data-sort="benchmark_correct_rate" data-benchmark-column="true">Correct</th>
-            <th data-sort="warm_benchmark_error_rate" data-benchmark-column="true">Error</th>
-            <th data-sort="warm_mean_ttft_ms">Warm TTFT</th>
-            <th data-sort="warm_mean_total_latency_ms">Warm Latency</th>
-            <th data-sort="warm_mean_decode_tps">Decode Speed</th>
-            <th data-sort="warm_mean_initial_prompt_tps">Init Prompt Speed</th>
-            <th data-sort="warm_mean_conversation_prompt_tps">Conv Prompt Speed</th>
-            <th data-sort="cold_mean_total_latency_ms">Cold Latency</th>
-          </tr>
-        </thead>
+      <div class="catalog-section-title">推論性能 — 中央値</div>
+      <div style="overflow-x:auto"><table id="leaderboard-table">
+        <thead><tr><th data-sort="model">Model</th><th data-sort="provider_sort">実行元</th><th data-sort="test" title="入力目安でソート">Test</th><th data-sort="phase">状態</th><th data-sort="success_rate" title="成功率でソート">成功/試行</th><th><button type="button" data-sort="input_tokens">入力</button> / <button type="button" data-sort="output_tokens">出力</button> (tok)</th><th data-sort="pp_tps">pp TPS</th><th data-sort="tg_tps">tg TPS</th><th data-sort="ttft_ms">TTFT (ms)</th><th data-sort="tpot_ms">TPOT (ms/token)</th><th data-sort="e2e_ms">E2E (s)</th><th data-sort="total_tps">総合 TPS</th><th>Inspect</th></tr></thead>
         <tbody id="leaderboard-body"></tbody>
-      </table>
-      <div class="table-note" id="leaderboard-note">history.json 全体を集計しています。速度系は Warm 平均を中心に比較し、Correct は cold + warm を通した全体正答率です。Init Prompt は初回投入、Conv Prompt は会話全体の prompt throughput です。usage が返らないモデルでも、同一 prompt の実測 token 数が history 内にあれば代表値で補完します。参照がない場合のみ N/A です。</div>
+      </table></div>
+      <div class="table-note" id="leaderboard-note"></div>
+      <details class="detail-disclosure"><summary>計測値の定義</summary>
+        <div class="table-note">pp TPSはAPI報告値があれば使用し、未報告なら入力トークン数÷TTFTです。後者には通信・待機・初回生成の時間も含まれます。tg TPSはAPI報告値または(出力トークン数−1)÷初回チャンク後の時間。TPOTも同じ区間から算出します。TTFTは最初の本文・思考・ツール関数名/引数チャンクまで、総合TPSは(入力+出力)÷E2Eです。タスクは推論ごとの値を記録し、速度・待ち時間は試行内の中央値、トークン数と推論E2Eは合計です。ツール実行時間は課題の所要時間に含めます。未取得は0で補完しません。入力目安は共通テキストの文字数から算出し、実トークン数にはチャットテンプレート等も含まれます。</div>
+      </details>
+      <div id="concurrency-section">
+      <div class="catalog-section-title">同時実行性能</div>
+      <div style="overflow-x:auto"><table id="concurrency-table">
+        <thead><tr><th data-sort="model">Model</th><th data-sort="provider_sort">実行元</th><th data-sort="target_input_tokens">入力目安 (tok)</th><th data-sort="trial">試行</th><th>並列数 <button type="button" data-sort="concurrency_actual">実行</button>/<button type="button" data-sort="concurrency_requested">予定</button></th><th data-sort="input_tps">全体入力 tok/s</th><th data-sort="output_tps">全体出力 tok/s</th><th data-sort="speedup">1並列比</th><th data-sort="ttft_ms">TTFT中央値 (ms)</th><th data-sort="e2e_ms">E2E中央値 (s)</th><th data-sort="elapsed_sec">全体時間 (s)</th><th data-sort="error_count">エラー</th><th>Inspect</th></tr></thead>
+        <tbody id="concurrency-body"></tbody>
+      </table></div>
+      <div class="table-note">全体スループットは合計トークン数÷最初のリクエスト開始から最後の完了まで。上段のtg TPSとは測定区間が異なります。倍率は同一run・入力・フェーズ・キャッシュ状態・測定方法の1並列結果を基準にします。失敗や再開による部分測定には倍率を付けません。クライアントの同時実行数を測定し、エンジン内部のバッチ方式は推測しません。</div>
+      </div>
+      <div id="quality-section">
+      <div class="catalog-section-title">課題成績</div>
+      <table id="quality-table"><thead><tr><th data-sort="display_model">Model</th><th data-sort="provider_sort">実行元</th><th data-sort="overall_benchmark_correct_count" title="正答数でソート">正答/全問</th><th data-sort="benchmark_correct_rate">正答率</th><th data-sort="overall_benchmark_error_count" title="エラー数でソート">実行エラー</th><th data-sort="warm_mean_total_latency_ms">Warm所要時間（平均）</th><th>Inspect</th></tr></thead><tbody id="quality-body"></tbody></table>
+      <div class="table-note">Inspect AIの採点結果です。リクエスト成功率とは区別します。問題別の所要時間・トークン消費・ツール呼び出しはRun Details / Inspect Logsで確認できます。</div>
+      </div>
     </div>
 
     <div id="compare-panel" class="card" style="display:none;">
@@ -1166,7 +1188,9 @@ def render_report_html(history_url: str) -> str:
         <select id="compare-left-model"></select>
         <button class="btn btn-secondary" id="compare-swap">Swap</button>
         <select id="compare-right-model"></select>
+        <label>比較軸 <select id="comparison-axis"><option value="model">モデル</option><option value="runtime">実行エンジン</option><option value="quantization">量子化</option><option value="parallelism">並列数</option></select></label>
       </div>
+      <div id="comparison-conditions" class="table-note" aria-live="polite"></div>
       <table id="compare-table">
         <thead>
           <tr>
@@ -1197,7 +1221,7 @@ def render_report_html(history_url: str) -> str:
         </thead>
         <tbody id="coldwarm-body"></tbody>
       </table>
-      <div class="table-note">Delta は `warm - cold` です。負の値ほど warm 化で改善しています。</div>
+      <div class="table-note">cold は再ロード後の初回試行、warm は初回推論を終えた後の反復試行です。ロード時間は詳細で別表示し、OS・KV キャッシュ状態は未確認なら不明です。Docker は試行ごとの問題セット単位で、各問の first_after_load / repeat は詳細ログに記録します。ds4 の managed モードは開始時にロードします。external モードだけはロード・cold を計測せず、準備推論後の warm のみ記録します。旧形式の cold/warm は定義未確認です。Delta は `warm - cold` です。</div>
     </div>
 
       <div id="stability-panel" class="card" style="display:none;">
@@ -1223,6 +1247,7 @@ def render_report_html(history_url: str) -> str:
       </div>
 
       <div id="telemetry-panel" class="card" style="display:none;">
+        <div class="table-note">API・クライアントが記録した時間とトークン数の分析です。会話・思考・ツールの入出力はInspect Logsで確認できます。</div>
         <div id="telemetry-content"></div>
       </div>
 
@@ -1310,7 +1335,7 @@ def render_report_html(history_url: str) -> str:
                   <th data-sort="model">Model / Run</th>
                   <th data-sort="phase">Attempt</th>
                   <th data-sort="total_latency_ms">Metrics</th>
-                  <th data-sort="tool_call_count">Tool Calls</th>
+                  <th>Inspect</th>
                   <th data-sort="status">Outcome</th>
                 </tr>
               </thead>
@@ -1331,6 +1356,23 @@ def render_report_html(history_url: str) -> str:
       </div>
     </div>
 
+    <div id="inspect-panel" class="card" style="display:none;">
+      <div class="toolbar">
+        <strong>Inspect Logs</strong>
+        <button class="btn btn-secondary" id="inspect-all">すべてのログ</button>
+        <button class="btn btn-secondary" id="inspect-refresh">ログを更新</button>
+        <a class="btn btn-secondary hidden" id="inspect-external" target="_blank" rel="noopener noreferrer">別タブで開く</a>
+      </div>
+      <div class="inspect-context" id="inspect-context">保存済みの Inspect ログ</div>
+      <div class="table-note">評価ログにはホスト側の採点、エージェントログには会話とツール呼び出しを表示します。同じ推論の記録なので、両者のトークン数は合算しません。ログは読み取り専用です。</div>
+      <div class="inspect-controls">
+        <label for="inspect-log-select">表示するログ</label>
+        <select id="inspect-log-select" disabled><option value="">ログを選択</option></select>
+      </div>
+      <div class="table-note" id="inspect-status" role="status" aria-live="polite"></div>
+      <iframe id="inspect-frame" class="inspect-frame hidden" title="Inspect AI の会話・採点ログ" referrerpolicy="same-origin"></iframe>
+    </div>
+
     <div class="status-bar">
       <div id="summary-text"></div>
       <div id="subsummary"></div>
@@ -1339,6 +1381,7 @@ def render_report_html(history_url: str) -> str:
 
   <script>
     const DEFAULT_HISTORY_URL = __DEFAULT_HISTORY_URL__;
+    const INSPECT_API_URL = __INSPECT_API_URL__;
     const ALL_PROMPTS = "__ALL_PROMPTS__";
     const COMMON_METRICS = [
       "ttft_ms",
@@ -1372,7 +1415,9 @@ def render_report_html(history_url: str) -> str:
       let viewData = emptyPayload([]);
 
       const state = {
-        leaderboardSort: { key: "warm_mean_total_latency_ms", asc: true },
+        leaderboardSort: { key: "e2e_ms", asc: true },
+        concurrencySort: { key: "model", asc: true },
+        qualitySort: { key: "benchmark_correct_rate", asc: false },
       leaderboardSelectedModels: [],
       leaderboardFilterTouched: false,
         compare: { leftModel: "", rightModel: "" },
@@ -1387,6 +1432,10 @@ def render_report_html(history_url: str) -> str:
         telemetryQuestionKey: "",
         selectedPrompt: "",
         rawLogCache: {},
+        inspectScope: null,
+        inspectRequest: 0,
+        inspectLoaded: false,
+        inspectUrl: "",
       };
 
       const filters = {
@@ -1407,6 +1456,7 @@ def render_report_html(history_url: str) -> str:
         telemetry: document.getElementById("telemetry-panel"),
         errors: document.getElementById("errors-panel"),
         details: document.getElementById("details-panel"),
+        inspect: document.getElementById("inspect-panel"),
       };
 
     function escapeHtml(value) {
@@ -1509,16 +1559,28 @@ def render_report_html(history_url: str) -> str:
         return "other";
       }
 
+      function hasExecutionError(entry) {
+        const status = String(entry?.status || "").trim().toLowerCase();
+        return Boolean(firstText([entry?.error]) || (status && status !== "success"));
+      }
+
       function normalizeErrorFields(entry) {
         const normalized = { ...(entry || {}) };
+        normalized.stderr_excerpt = excerptText(normalized.stderr_excerpt || "");
+        if (!normalized.log_path) normalized.log_path = "";
+        // Old history may have an error signature derived solely from INFO
+        // output on stderr. Clear it without changing the original log.
+        if (!hasExecutionError(normalized)) {
+          normalized.error_signature = "";
+          normalized.error_category = "";
+          return normalized;
+        }
         const signatureSource = firstText([normalized.error, normalized.stderr_excerpt]);
         const computedCategory = categorizeError(signatureSource, normalized.status);
         normalized.error_signature = normalized.error_signature || normalizeErrorSignature(signatureSource);
         normalized.error_category = (!normalized.error_category || (normalized.error_category === "other" && computedCategory && computedCategory !== "other"))
           ? computedCategory
           : normalized.error_category;
-        normalized.stderr_excerpt = excerptText(normalized.stderr_excerpt || "");
-        if (!normalized.log_path) normalized.log_path = "";
         return normalized;
       }
 
@@ -1641,6 +1703,7 @@ def render_report_html(history_url: str) -> str:
         const byPrompt = new Map();
 
         historyRuns.forEach((run) => {
+          if (run.conditions) return;
           const runPromptText = firstText([run?.prompt_text]);
           const runModel = firstText([run?.model]) || "(unknown)";
           const runRecords = Array.isArray(run?.records) ? run.records : [];
@@ -1662,6 +1725,7 @@ def render_report_html(history_url: str) -> str:
         });
 
         historyRuns.forEach((run) => {
+          if (run.conditions) return;
           const runPromptText = firstText([run?.prompt_text]);
           const runModel = firstText([run?.model]) || "(unknown)";
           const runRecords = Array.isArray(run?.records) ? run.records : [];
@@ -1909,6 +1973,9 @@ def render_report_html(history_url: str) -> str:
 
     function normalizeModelInfo(modelInfo, fallbackModel = "") {
       const normalized = modelInfo && typeof modelInfo === "object" ? { ...modelInfo } : {};
+      if (normalized.model_identity_scope === "server_compatibility_alias") {
+        return { ...normalized, requested_model: normalized.requested_model || fallbackModel };
+      }
       const inferred = inferModelInfoFromModelName(fallbackModel) || {};
       const merged = { ...normalized };
       Object.entries(inferred).forEach(([key, value]) => {
@@ -1951,8 +2018,33 @@ def render_report_html(history_url: str) -> str:
       }) ? merged : null;
     }
 
+    function recordedProvider(entry) {
+      // Only saved provider metadata identifies a runtime. Model names, ports,
+      // and engine names such as llama.cpp are not evidence of the provider.
+      const value = firstText([entry?.provider, entry?.conditions?.provider, entry?.model_info?.provider]).toLowerCase();
+      return value === "unsloth-studio" ? "unsloth_studio" : value;
+    }
+
+    function providerLabel(provider) {
+      switch (provider) {
+        case "lmstudio": return "LM Studio";
+        case "ds4": return "ds4";
+        case "omlx": return "oMLX";
+        case "mlx_serve": return "mlx-serve";
+        case "unsloth_studio": return "Unsloth Studio";
+        default: return "不明";
+      }
+    }
+
+    function renderProviderBadge(provider) {
+      const kind = ["lmstudio", "ds4", "unsloth_studio", "omlx", "mlx_serve"].includes(provider) ? provider : "unknown";
+      const label = providerLabel(provider);
+      return `<span class="tag provider-badge provider-${kind}" title="実行元: ${label}">${label}</span>`;
+    }
+
     function normalizeRunEntry(runData) {
       const normalized = { ...(runData || {}) };
+      normalized.provider = recordedProvider(normalized);
       const rawRecords = Array.isArray(normalized.records) ? normalized.records : [];
       const records = rawRecords.filter((record) => record && typeof record === "object").map((record) => ({ ...record }));
 
@@ -1980,6 +2072,8 @@ def render_report_html(history_url: str) -> str:
         return normalizePromptFields(normalizeToolFields(normalizeErrorFields({
           ...record,
           model: record.model || model,
+          provider: recordedProvider(record) || normalized.provider,
+          evaluation: record.evaluation || normalized.evaluation || normalized.conditions?.harness || null,
           prompt_text: record.prompt_text || promptText,
           run_id: record.run_id || normalized.run_id,
           run_started_at: record.run_started_at || normalized.started_at,
@@ -1989,6 +2083,12 @@ def render_report_html(history_url: str) -> str:
           lmstudio_parallelism: record.lmstudio_parallelism ?? runLmStudioParallelism,
           model_info: normalizeModelInfo(record.model_info || normalized.model_info, record.model || model),
           benchmark_mode: benchmarkMode,
+          conditions: record.conditions || normalized.conditions || null,
+          comparison: record.comparison || normalized.comparison || null,
+          timings: record.timings || normalized.timings || null,
+          preflight: record.preflight || normalized.preflight || null,
+          lifecycle: record.lifecycle || normalized.lifecycle || [],
+          run_status: record.run_status || normalized.status || "legacy",
           question_results: questionResults,
         })));
       });
@@ -2140,6 +2240,7 @@ def render_report_html(history_url: str) -> str:
     }
 
     function buildModelSummary(model, records, modelInfo) {
+      const providers = [...new Set(records.map(recordedProvider))];
       const grouped = { cold: [], warm: [], overall: records };
       for (const record of records) {
         const phase = String(record.phase || "unknown");
@@ -2149,6 +2250,7 @@ def render_report_html(history_url: str) -> str:
 
       const summary = {
         model,
+        provider: providers.length === 1 ? providers[0] : "",
         model_info: modelInfo || null,
         total_samples: records.length,
         phases: {
@@ -2183,6 +2285,7 @@ def render_report_html(history_url: str) -> str:
     }
 
     function summaryPayloadFromRecords(records, modelCatalog = {}) {
+      records = records.filter((record) => !record.partial && (!record.run_status || ["completed", "legacy"].includes(record.run_status)));
       const grouped = new Map();
       for (const record of records) {
         const comparisonModel = String(record.comparison_model || record.model || "(unknown)");
@@ -2224,7 +2327,7 @@ def render_report_html(history_url: str) -> str:
     function buildReportPayload(historyEntries) {
       const historyRuns = (Array.isArray(historyEntries) ? historyEntries : [historyEntries])
         .filter((entry) => entry && typeof entry === "object")
-        .map((entry) => normalizeRunEntry(entry));
+        .map((entry, index) => normalizeRunEntry({...entry, run_id: entry.run_id || `unidentified-${index}`}));
       backfillPromptMetricsFromPeers(historyRuns);
 
       const records = [];
@@ -2233,7 +2336,7 @@ def render_report_html(history_url: str) -> str:
       for (const run of historyRuns) {
         if (run.prompt_text) prompts.push(run.prompt_text);
         const runModelInfo = normalizeModelInfo(run.model_info, run.model);
-        const runComparisonModel = comparisonModelKey(run.model, runModelInfo, run.lmstudio_parallelism);
+        const runComparisonModel = comparisonModelKey(run.model, runModelInfo, run.lmstudio_parallelism, run);
         if (runComparisonModel && runModelInfo) {
           modelCatalog[runComparisonModel] = runModelInfo;
         }
@@ -2242,9 +2345,11 @@ def render_report_html(history_url: str) -> str:
             || runModelInfo
             || normalizeModelInfo(null, record.model || run.model)
             || null;
+          const recordComparisonModel = comparisonModelKey(record.model || run.model, recordModelInfo, record.lmstudio_parallelism ?? run.lmstudio_parallelism, record);
+          if (recordModelInfo) modelCatalog[recordComparisonModel] = recordModelInfo;
           records.push({
             ...record,
-            comparison_model: comparisonModelKey(record.model || run.model, recordModelInfo, record.lmstudio_parallelism ?? run.lmstudio_parallelism),
+            comparison_model: recordComparisonModel,
             model_info: recordModelInfo,
             benchmark_mode: record.benchmark_mode || run.benchmark_mode || null,
             benchmark_id: record.benchmark_id || run.benchmark_id || null,
@@ -2270,6 +2375,7 @@ def render_report_html(history_url: str) -> str:
         records,
         summary,
         model_catalog: modelCatalog,
+        model_presentations: buildModelPresentations(historyRuns, records),
         prompt_preview: promptPreview,
         prompt_count: uniquePrompts.length,
         prompts: uniquePrompts,
@@ -2608,9 +2714,9 @@ def render_report_html(history_url: str) -> str:
 
       function telemetryRunLabel(run) {
         const runInfo = normalizeModelInfo(run.model_info, run.model);
-        const modelLabel = comparisonModelKey(run.model, runInfo, run.lmstudio_parallelism);
+        const modelLabel = comparisonModelKey(run.model, runInfo, run.lmstudio_parallelism, run);
         const started = String(run.started_at || "").replace("T", " ").slice(0, 19);
-        return `${started || "-"} · ${modelLabel || run.model || "(unknown)"} · ${run.run_id || "-"}`;
+        return `${started || "-"} · ${modelChoiceText(modelLabel, run)}`;
       }
 
       function syncTelemetrySelection() {
@@ -2857,7 +2963,7 @@ def render_report_html(history_url: str) -> str:
       function normalizeTelemetryTurn(rawTurn, index, context = {}) {
         const raw = rawTurn && typeof rawTurn === "object" ? rawTurn : {};
         const promptTokens = firstNumericValue([raw.prompt_tokens]) ?? 0;
-        const cachedPromptTokens = firstNumericValue([raw.cached_prompt_tokens]) ?? 0;
+        const cachedPromptTokens = firstNumericValue([raw.cached_prompt_tokens]);
         const completionTokens = firstNumericValue([raw.completion_tokens]) ?? 0;
         const totalTokens = firstNumericValue([raw.total_tokens]) ?? (promptTokens + completionTokens);
         const elapsedSec = firstNumericValue([raw.elapsed_sec]);
@@ -2883,7 +2989,7 @@ def render_report_html(history_url: str) -> str:
           total_tokens_per_sec: totalSpeed,
           ttft_sec: firstNumericValue([raw.ttft_sec]),
           first_chunk_sec: firstNumericValue([raw.first_chunk_sec]),
-          prefill_sec: firstNumericValue([raw.prefill_sec]),
+          prefill_sec: typeof raw.timing_sources?.prefill_sec === "string" && raw.timing_sources.prefill_sec.startsWith("api.") ? firstNumericValue([raw.prefill_sec]) : null,
           decode_sec: firstNumericValue([raw.decode_sec]),
           post_first_token_sec: firstNumericValue([raw.post_first_token_sec]),
           cost: firstNumericValue([raw.cost]),
@@ -2971,10 +3077,10 @@ def render_report_html(history_url: str) -> str:
         const records = Array.isArray(run?.records) ? run.records : [];
         const sequences = [];
         const runInfo = normalizeModelInfo(run?.model_info, run?.model);
-        const modelLabel = comparisonModelKey(run?.model, runInfo, run?.lmstudio_parallelism);
+        const modelLabel = comparisonModelKey(run?.model, runInfo, run?.lmstudio_parallelism, run);
         records.forEach((record, recordIndex) => {
           const recordInfo = normalizeModelInfo(record?.model_info, record?.model || run?.model);
-          const recordModel = comparisonModelKey(record?.model || run?.model, recordInfo, record?.lmstudio_parallelism ?? run?.lmstudio_parallelism);
+          const recordModel = comparisonModelKey(record?.model || run?.model, recordInfo, record?.lmstudio_parallelism ?? run?.lmstudio_parallelism, record);
           const baseContext = {
             phase: record.phase || "",
             iteration: record.iteration ?? "",
@@ -3129,6 +3235,7 @@ def render_report_html(history_url: str) -> str:
       }
 
       function formatAveragedCount(value, digits = 1) {
+        if (value == null || value === "") return "未取得";
         const num = Number(value);
         if (!Number.isFinite(num)) return "-";
         const precision = Math.abs(num - Math.round(num)) < 0.05 ? 0 : digits;
@@ -3512,8 +3619,8 @@ def render_report_html(history_url: str) -> str:
         return (turns || []).map((turn) => ({
           ...turn,
           prompt_growth_tokens: Math.max(0, Number(turn.prompt_delta_tokens) || 0),
-          generation_time_sec: Number.isFinite(Number(turn.post_first_token_sec)) ? Number(turn.post_first_token_sec) : Number(turn.elapsed_sec),
-          input_time_sec: Number.isFinite(Number(turn.prompt_load_sec)) ? Number(turn.prompt_load_sec) : Number(turn.ttft_sec),
+          generation_time_sec: normalizeNumeric(turn.post_first_token_sec) != null ? Number(turn.post_first_token_sec) : Number(turn.elapsed_sec),
+          input_time_sec: normalizeNumeric(turn.prompt_load_sec) != null ? Number(turn.prompt_load_sec) : Number(turn.ttft_sec),
         }));
       }
 
@@ -3686,7 +3793,7 @@ def render_report_html(history_url: str) -> str:
               correctKnownCount += 1;
               if (row.correct) correctCount += 1;
             }
-            if (Number.isFinite(Number(row.score))) {
+            if (normalizeNumeric(row.score) != null) {
               scoreSum += Number(row.score);
               scoreCount += 1;
             }
@@ -3698,7 +3805,7 @@ def render_report_html(history_url: str) -> str:
             let rowElapsed = 0;
             row.turns.forEach((turn) => {
               const promptTokens = normalizeNumeric(turn.prompt_tokens) || 0;
-              const cachedTokens = normalizeNumeric(turn.cached_prompt_tokens) || 0;
+              const cachedTokens = normalizeNumeric(turn.cached_prompt_tokens);
               const completionTokens = normalizeNumeric(turn.completion_tokens) || 0;
               const totalTokenCount = normalizeNumeric(turn.total_tokens) || (promptTokens + completionTokens);
               totalPrompt += promptTokens;
@@ -3709,19 +3816,19 @@ def render_report_html(history_url: str) -> str:
                 totalCost += cost;
                 costCount += 1;
               }
-              if (Number.isFinite(Number(turn.elapsed_sec))) {
+              if (normalizeNumeric(turn.elapsed_sec) != null) {
                 totalElapsed += Number(turn.elapsed_sec);
                 rowElapsed += Number(turn.elapsed_sec);
               }
-              if (Number.isFinite(Number(turn.ttft_sec))) {
+              if (normalizeNumeric(turn.ttft_sec) != null) {
                 totalTtftSec += Number(turn.ttft_sec);
                 ttftTurns += 1;
               }
-              if (Number.isFinite(Number(turn.post_first_token_sec))) {
+              if (normalizeNumeric(turn.post_first_token_sec) != null) {
                 totalPostFirstTokenSec += Number(turn.post_first_token_sec);
                 postFirstTokenTurns += 1;
               }
-              if (Number.isFinite(Number(turn.prompt_load_sec))) {
+              if (normalizeNumeric(turn.prompt_load_sec) != null) {
                 totalPromptLoadSec += Number(turn.prompt_load_sec);
                 totalPromptForPromptLoad += promptTokens;
                 promptTimingTurns += 1;
@@ -3734,6 +3841,7 @@ def render_report_html(history_url: str) -> str:
                   sample_count: 0,
                   promptSum: 0,
                   cachedPromptSum: 0,
+                  cachedPromptCount: 0,
                   promptDeltaSum: 0,
                   promptDeltaCount: 0,
                   completionSum: 0,
@@ -3763,8 +3871,11 @@ def render_report_html(history_url: str) -> str:
               const stat = turnStats.get(turnIndex);
               stat.sample_count += 1;
               stat.promptSum += promptTokens;
-              stat.cachedPromptSum += cachedTokens;
-              if (Number.isFinite(Number(turn.prompt_delta_tokens))) {
+              if (cachedTokens != null) {
+                stat.cachedPromptSum += cachedTokens;
+                stat.cachedPromptCount += 1;
+              }
+              if (normalizeNumeric(turn.prompt_delta_tokens) != null) {
                 stat.promptDeltaSum += Number(turn.prompt_delta_tokens);
                 stat.promptDeltaCount += 1;
               }
@@ -3773,19 +3884,19 @@ def render_report_html(history_url: str) -> str:
               stat.cumulativePromptSum += normalizeNumeric(turn.cumulative_prompt_tokens) || 0;
               stat.cumulativeCompletionSum += normalizeNumeric(turn.cumulative_completion_tokens) || 0;
               stat.cumulativeTotalSum += normalizeNumeric(turn.cumulative_total_tokens) || 0;
-              if (Number.isFinite(Number(turn.elapsed_sec))) {
+              if (normalizeNumeric(turn.elapsed_sec) != null) {
                 stat.elapsedSum += Number(turn.elapsed_sec);
                 stat.elapsedCount += 1;
               }
-              if (Number.isFinite(Number(turn.ttft_sec))) {
+              if (normalizeNumeric(turn.ttft_sec) != null) {
                 stat.ttftSum += Number(turn.ttft_sec);
                 stat.ttftCount += 1;
               }
-              if (Number.isFinite(Number(turn.post_first_token_sec))) {
+              if (normalizeNumeric(turn.post_first_token_sec) != null) {
                 stat.postFirstTokenSecSum += Number(turn.post_first_token_sec);
                 stat.postFirstTokenSecCount += 1;
               }
-              if (Number.isFinite(Number(turn.prompt_load_sec))) {
+              if (normalizeNumeric(turn.prompt_load_sec) != null) {
                 stat.promptLoadSecSum += Number(turn.prompt_load_sec);
                 stat.promptLoadSecCount += 1;
                 stat.promptTokensWithLoadSum += promptTokens;
@@ -3816,7 +3927,7 @@ def render_report_html(history_url: str) -> str:
               turn_index: stat.turn_index,
               sample_count: stat.sample_count,
               prompt_tokens: avgTelemetryValue(stat.promptSum, stat.sample_count),
-              cached_prompt_tokens: avgTelemetryValue(stat.cachedPromptSum, stat.sample_count),
+              cached_prompt_tokens: avgTelemetryValue(stat.cachedPromptSum, stat.cachedPromptCount),
               prompt_delta_tokens: avgTelemetryValue(stat.promptDeltaSum, stat.promptDeltaCount),
               completion_tokens: avgTelemetryValue(stat.completionSum, stat.sample_count),
               total_tokens: avgTelemetryValue(stat.totalSum, stat.sample_count),
@@ -4012,7 +4123,7 @@ def render_report_html(history_url: str) -> str:
       }
 
       function telemetryGroupSubtitle(row) {
-        const pieces = [row.model, row.provider, row.benchmark_title || row.benchmark_id, row.phase]
+        const pieces = [modelChoiceText(row.model, row), row.benchmark_title || row.benchmark_id, row.phase]
           .filter((value, index, array) => value && array.indexOf(value) === index);
         return pieces.join(" · ") || "-";
       }
@@ -4033,8 +4144,7 @@ def render_report_html(history_url: str) -> str:
                 <div class="detail-row-meta">${escapeHtml(subtitle)}</div>
               </td>
               <td>
-                <div class="detail-row-title">${escapeHtml(row.model)}</div>
-                <div class="detail-row-meta">${escapeHtml(row.provider)}</div>
+                <div class="detail-row-title">${renderModelName(row.model, row, true)}</div>
               </td>
               <td>${formatCount(row.executionCount)}</td>
               <td>${correctness}</td>
@@ -4059,9 +4169,9 @@ def render_report_html(history_url: str) -> str:
             <td>${formatAveragedCount(turn.cached_prompt_tokens)}</td>
             <td>${formatAveragedCount(turn.completion_tokens)}</td>
             <td>${formatAveragedCount(turn.cumulative_total_tokens)}</td>
-            <td>${Number.isFinite(Number(turn.ttft_sec)) ? formatDuration(turn.ttft_sec) : '<span class="muted">-</span>'}</td>
-            <td>${Number.isFinite(Number(turn.prompt_load_sec)) ? formatDuration(turn.prompt_load_sec) : '<span class="muted">-</span>'}</td>
-            <td>${Number.isFinite(Number(turn.elapsed_sec)) ? formatDuration(turn.elapsed_sec) : '<span class="muted">-</span>'}</td>
+            <td>${normalizeNumeric(turn.ttft_sec) != null ? formatDuration(turn.ttft_sec) : '<span class="muted">-</span>'}</td>
+            <td>${normalizeNumeric(turn.prompt_load_sec) != null ? formatDuration(turn.prompt_load_sec) : '<span class="muted">-</span>'}</td>
+            <td>${normalizeNumeric(turn.elapsed_sec) != null ? formatDuration(turn.elapsed_sec) : '<span class="muted">-</span>'}</td>
             <td>${formatTelemetrySpeed(turn.completion_tokens_per_sec)}</td>
           </tr>
         `).join("") : '<tr><td colspan="11" class="muted">平均化できる turn usage はありません。</td></tr>';
@@ -4272,7 +4382,7 @@ def render_report_html(history_url: str) -> str:
           const questionResults = Array.isArray(record.question_results)
             ? record.question_results.filter((item) => item && typeof item === "object")
             : [];
-          const failingQuestions = questionResults.filter((item) => (item.status && item.status !== "success") || item.error);
+          const failingQuestions = questionResults.filter(hasExecutionError);
           if (failingQuestions.length) {
             for (const questionResult of failingQuestions) {
               const event = normalizeErrorFields({
@@ -4290,13 +4400,13 @@ def render_report_html(history_url: str) -> str:
                 record_key: recordKey(record),
                 source_level: "question",
               });
-              if (event.error_signature || event.error || event.status !== "success") {
+              if (hasExecutionError(event)) {
                 events.push(event);
               }
             }
             continue;
           }
-          if (baseEvent.error_signature || baseEvent.error || baseEvent.status !== "success") {
+          if (hasExecutionError(baseEvent)) {
             events.push(baseEvent);
           }
         }
@@ -4400,8 +4510,80 @@ def render_report_html(history_url: str) -> str:
       return `${label} p=${numeric}`;
     }
 
-    function comparisonModelKey(model, modelInfo, lmstudioParallelism = null) {
+    function comparisonModelKey(model, modelInfo, lmstudioParallelism = null, context = null) {
+      // This is an aggregation/selection key, never a user-facing model name.
+      const base = baseComparisonModelKey(model, modelInfo, lmstudioParallelism);
+      if (!context) return base;
+      const group = context.comparison?.group_id || `legacy:${context.run_id || "unknown"}`;
+      const evaluation = context.evaluation || context.conditions?.harness;
+      const harness = evaluation?.name === "inspect" ? "Inspect AI" : evaluation?.name === "legacy" ? "Legacy" : "評価基盤不明";
+      return `${base} [${providerLabel(recordedProvider(context))}] [${harness}] [${group}]${performanceIdentity(context)}`;
+    }
+
+    function modelPresentationEntry(key, context = null) {
+      const info = context?.model_info || currentModelCatalog()[key] || {};
+      const evaluation = context?.evaluation || context?.conditions?.harness;
+      return {
+        name: firstText([info.display_name, info.requested_model, context?.raw_model, context?.model, key]) || "(unknown)",
+        provider: recordedProvider(context || info),
+        evaluation: evaluation?.name === "inspect" ? "Inspect AI" : evaluation?.name === "legacy" ? "Legacy" : "評価基盤不明",
+        group_id: context?.comparison?.group_id || "",
+        started_at: context?.run_started_at || context?.started_at || "",
+        measurement: "",
+        scenario: context?.target_input_tokens ? `≈${context.target_input_tokens} tok / ${context.concurrency_actual}並列 / ${context.phase}` : "",
+      };
+    }
+
+    function buildModelPresentations(runs, records) {
+      const entries = new Map();
+      for (const entry of [...runs, ...records]) {
+        const info = normalizeModelInfo(entry.model_info, entry.model);
+        const key = entry.comparison_model || comparisonModelKey(entry.model, info, entry.lmstudio_parallelism, entry);
+        // Build entirely from the new payload, independently of the displayed view.
+        const presentation = modelPresentationEntry(key, {...entry, model_info: info || {requested_model: entry.model}});
+        if (!entries.has(key) || presentation.started_at < entries.get(key).started_at) entries.set(key, presentation);
+      }
+      const duplicates = new Map();
+      for (const [key, entry] of entries) {
+        const identity = JSON.stringify([entry.name, entry.provider]);
+        if (!duplicates.has(identity)) duplicates.set(identity, []);
+        duplicates.get(identity).push(key);
+      }
+      for (const keys of duplicates.values()) {
+        if (keys.length < 2) continue;
+        keys.sort((a, b) => entries.get(a).started_at.localeCompare(entries.get(b).started_at) || a.localeCompare(b));
+        const groups = [...new Set(keys.map(key => entries.get(key).group_id || key))];
+        if (groups.length > 1) keys.forEach(key => { entries.get(key).measurement = `測定 ${groups.indexOf(entries.get(key).group_id || key) + 1}`; });
+      }
+      return Object.fromEntries(entries);
+    }
+
+    function modelPresentation(key, context = null) {
+      // Use the complete history so changing a filter does not renumber measurements.
+      for (const catalog of [reportData.model_presentations, currentView().model_presentations]) {
+        if (catalog && Object.hasOwn(catalog, key)) return catalog[key];
+      }
+      return modelPresentationEntry(key, context);
+    }
+
+    function modelNameText(key, context = null) {
+      return modelPresentation(key, context).name;
+    }
+
+    function modelChoiceText(key, context = null) {
+      const entry = modelPresentation(key, context);
+      return [entry.name, providerLabel(entry.provider), entry.measurement, entry.scenario].filter(Boolean).join(" · ");
+    }
+
+    function renderModelName(key, context = null, showProvider = false) {
+      const entry = modelPresentation(key, context);
+      const caption = [showProvider ? renderProviderBadge(entry.provider) : "", escapeHtml(entry.measurement)].filter(Boolean).join(" ");
+      return `<span class="model-name">${escapeHtml(entry.name)}</span>${caption ? `<span class="model-caption">${caption}</span>` : ""}`;
+    }
+
+    function baseComparisonModelKey(model, modelInfo, lmstudioParallelism = null) {
       const requestedModel = modelInfo?.requested_model || model || "(unknown)";
+      if (modelInfo?.model_identity_scope === "server_compatibility_alias") return requestedModel;
       const quantizationName = firstText([
         modelInfo?.quantization_name,
         extractQuantizationToken(modelInfo?.quantization),
@@ -4463,6 +4645,7 @@ def render_report_html(history_url: str) -> str:
 
     function modelIdentityText(model, modelInfo) {
       const parts = [];
+      if (modelInfo?.model_identity_scope === "server_compatibility_alias") parts.push("互換エイリアス（GGUF未確認）");
       if (modelInfo?.display_name) parts.push(modelInfo.display_name);
       if (modelInfo?.requested_model && modelInfo.requested_model !== model) parts.push(`requested:${modelInfo.requested_model}`);
       if (modelInfo?.identifier && modelInfo.identifier !== model && !looksLikeFileSystemPath(modelInfo.identifier)) parts.push(`id:${modelInfo.identifier}`);
@@ -4482,6 +4665,10 @@ def render_report_html(history_url: str) -> str:
       return typeof value === "number" && Number.isFinite(value) ? `${(value / 1000).toFixed(3)} s` : "N/A";
     }
 
+    function formatRunSeconds(value) {
+      return typeof value === "number" && Number.isFinite(value) ? formatSec(value * 1000) : "不明";
+    }
+
     function formatTps(value) {
       return typeof value === "number" && Number.isFinite(value) ? `${value.toFixed(2)} tok/s` : "N/A";
     }
@@ -4498,15 +4685,10 @@ def render_report_html(history_url: str) -> str:
       return value ? escapeHtml(value) : "-";
     }
 
-    function sortClass(sortState, key) {
-      if (sortState.key !== key) return "";
-      return sortState.asc ? "sort-asc" : "sort-desc";
-    }
-
     function normalizeSortValue(value) {
-      if (typeof value === "number") return value;
+      if (typeof value === "number") return Number.isFinite(value) ? value : null;
       if (typeof value === "string") return value.toLowerCase();
-      if (value == null) return Number.POSITIVE_INFINITY;
+      if (value == null) return null;
       return String(value).toLowerCase();
     }
 
@@ -4514,6 +4696,13 @@ def render_report_html(history_url: str) -> str:
       return [...rows].sort((left, right) => {
         const a = normalizeSortValue(left[sortState.key]);
         const b = normalizeSortValue(right[sortState.key]);
+        // Missing observations stay last in either direction, never acting as zero.
+        if (a == null && b != null) return 1;
+        if (b == null && a != null) return -1;
+        if (typeof a === "string" && typeof b === "string") {
+          const order = a.localeCompare(b, undefined, {numeric: true});
+          if (order) return sortState.asc ? order : -order;
+        }
         if (a < b) return sortState.asc ? -1 : 1;
         if (a > b) return sortState.asc ? 1 : -1;
         return String(left.model || left.run_id || "").localeCompare(String(right.model || right.run_id || ""));
@@ -4625,7 +4814,7 @@ def render_report_html(history_url: str) -> str:
     }
 
       function recordKey(record) {
-        return `${record.run_id || "-"}::${record.phase || "-"}::${record.iteration || "-"}::${record.started_at || "-"}`;
+        return `${record.run_id || "-"}::${record.phase || "-"}::${record.iteration || "-"}::${record.started_at || "-"}::${record.sample_id || ""}`;
       }
 
       function showTab(selected) {
@@ -4634,6 +4823,121 @@ def render_report_html(history_url: str) -> str:
         });
         Object.entries(panels).forEach(([key, panel]) => {
           panel.style.display = key === selected ? "block" : "none";
+        });
+        if (selected === "inspect" && !state.inspectLoaded) loadInspectLogs();
+      }
+
+      function inspectButton(record, question = null, label = "Inspect で開く") {
+        if (!record.inspect && !question?.inspect && record.evaluation?.name !== "inspect") return "";
+        const scope = {
+          run_id: record.run_id || "", phase: record.phase || "", iteration: record.iteration,
+          question_id: question?.question_id || record.sample_id || (Array.isArray(record.question_results) && record.question_results.length ? "" : "prompt"),
+          preferred_path: question?.inspect?.log_path || record.inspect?.log_path || "",
+          label: `${providerLabel(record.provider)} / ${record.model || "-"} / ${record.run_id || "-"} / ${record.phase || "-"} ${record.iteration ?? ""}${question ? ` / ${question.question_id}` : ""}`,
+        };
+        return `<button class="btn btn-secondary inspect-link" data-inspect-scope="${escapeHtml(JSON.stringify(scope))}">${escapeHtml(label)}</button>`;
+      }
+
+      function inspectLogLabel(log) {
+        const role = log.role === "agent" ? "エージェント: 会話・ツール" : "評価: 採点・結果";
+        return `${role} | ${providerLabel(log.provider)} | ${log.model || "-"} | ${log.phase || "-"} ${log.iteration ?? ""} | ${log.question_id || "-"} | ${log.status} | ${inspectStorageLabel(log.log_storage)} | ${log.relative_path}`;
+      }
+
+      function chooseInspectLog(logs, preferredPath, previousUrl) {
+        const previous = logs.find(log => log.url === previousUrl);
+        if (previous) return previous.url;
+        // Follow the result's persisted audit path, even if a newer retry exists.
+        if (preferredPath) {
+          const exact = logs.find(log => log.path === preferredPath);
+          if (exact) return exact.url;
+          return "";
+        }
+        return "";
+      }
+
+      function displayInspectLog(url, reload = false) {
+        const frame = document.getElementById("inspect-frame");
+        const link = document.getElementById("inspect-external");
+        // Only the local integration's native viewer is an allowed frame target.
+        const allowed = typeof url === "string" && url.startsWith("/inspect/?");
+        if (!allowed) {
+          frame.classList.add("hidden");
+          frame.removeAttribute("src");
+          link.classList.add("hidden");
+          state.inspectUrl = "";
+          return;
+        }
+        if (reload || state.inspectUrl !== url) frame.src = url;
+        state.inspectUrl = url;
+        frame.classList.remove("hidden");
+        link.href = url;
+        link.classList.remove("hidden");
+      }
+
+      async function loadInspectLogs(reload = false) {
+        const status = document.getElementById("inspect-status");
+        const select = document.getElementById("inspect-log-select");
+        const scope = state.inspectScope;
+        const request = ++state.inspectRequest;
+        state.inspectLoaded = true;
+        document.getElementById("inspect-context").textContent = scope?.label || "すべての run・試行（再試行を含む）";
+        if (!INSPECT_API_URL) {
+          status.textContent = "統合表示は .venv/bin/python -m local_llm_bench.dashboard --port 7575 で起動し、http://127.0.0.1:7575/ を開いてください。";
+          displayInspectLog("");
+          return;
+        }
+        status.textContent = "Inspect ログを読み込み中…";
+        select.disabled = true;
+        try {
+          const params = new URLSearchParams();
+          for (const key of ["run_id", "phase", "iteration", "question_id"]) {
+            if (scope?.[key] != null && scope[key] !== "") params.set(key, String(scope[key]));
+          }
+          const response = await fetch(`${INSPECT_API_URL}?${params}`, {cache: "no-store"});
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const data = await response.json();
+          if (request !== state.inspectRequest) return;
+          const logs = Array.isArray(data.logs) ? data.logs : [];
+          const previousUrl = state.inspectUrl;
+          const selected = chooseInspectLog(logs, scope?.preferred_path, previousUrl)
+            || (scope && !scope.preferred_path ? logs.find(log => log.role === "evaluation")?.url || logs[0]?.url || "" : "");
+          const missing = Boolean(scope?.preferred_path && !logs.some(log => log.path === scope.preferred_path));
+          select.innerHTML = `<option value="">${scope ? "この実行のログを選択" : "Inspect のログ一覧"}</option>` + logs.map(log => `<option value="${escapeHtml(log.url)}">${escapeHtml(inspectLogLabel(log))}</option>`).join("");
+          select.disabled = !logs.length;
+          select.value = selected;
+          const viewerUrl = scope ? selected : selected || data.viewer_url;
+          displayInspectLog(logs.length ? viewerUrl : "", reload);
+          status.textContent = missing
+            ? "この結果に対応するログが見つかりません。別の試行は一覧から選択できます。"
+            : logs.length ? `${logs.length} 件。保存されたログは「ログを更新」で再読込できます。`
+            : "Inspect ログはまだありません。試行・問題のログが保存された後に更新してください。";
+        } catch (error) {
+          if (request !== state.inspectRequest) return;
+          select.innerHTML = '<option value="">読込失敗</option>';
+          displayInspectLog("");
+          status.textContent = `ログを読み込めませんでした (${error.message})。「ログを更新」で再試行できます。`;
+          state.inspectLoaded = false;
+        }
+      }
+
+      function bindInspectControls() {
+        document.addEventListener("click", event => {
+          const button = event.target.closest("[data-inspect-scope]");
+          if (!button) return;
+          state.inspectScope = JSON.parse(button.dataset.inspectScope);
+          state.inspectLoaded = false;
+          displayInspectLog("");
+          showTab("inspect");
+          document.getElementById("inspect-panel").scrollIntoView({block: "start"});
+        });
+        document.getElementById("inspect-all").addEventListener("click", () => {
+          state.inspectScope = null;
+          displayInspectLog("");
+          loadInspectLogs();
+        });
+        document.getElementById("inspect-refresh").addEventListener("click", () => loadInspectLogs(true));
+        document.getElementById("inspect-log-select").addEventListener("change", event => {
+          displayInspectLog(event.target.value || (state.inspectScope ? "" : "/inspect/?inspect_server=true"));
         });
       }
 
@@ -4646,7 +4950,7 @@ def render_report_html(history_url: str) -> str:
         if (filters.errorModel && !models.includes(filters.errorModel)) filters.errorModel = "";
         if (filters.errorCategory && !categories.includes(filters.errorCategory)) filters.errorCategory = "";
         modelSelect.innerHTML = ['<option value="">Model</option>'].concat(
-          models.map((model) => `<option value="${escapeHtml(model)}">${escapeHtml(model)}</option>`)
+          models.map((model) => `<option value="${escapeHtml(model)}">${escapeHtml(modelChoiceText(model))}</option>`)
         ).join("");
         categorySelect.innerHTML = ['<option value="">Category</option>'].concat(
           categories.map((category) => `<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`)
@@ -4713,7 +5017,7 @@ def render_report_html(history_url: str) -> str:
           ? `<a class="btn btn-secondary" href="${escapeHtml(logUrl)}" target="_blank" rel="noopener noreferrer">Open Raw Log</a>`
           : `<span class="tag">${escapeHtml(event.log_path || "-")}</span>`;
         pane.innerHTML = `
-          <h2>${escapeHtml(modelName)}</h2>
+          <h2>${renderModelName(modelName, event, true)}</h2>
           <div class="catalog-meta-grid">
             <div class="catalog-meta-item">
               <div class="catalog-meta-label">Run ID</div>
@@ -4802,7 +5106,7 @@ def render_report_html(history_url: str) -> str:
 
         modelBody.innerHTML = modelRows.length ? modelRows.map((row) => `
           <tr>
-            <td>${escapeHtml(row.model)}</td>
+            <td>${renderModelName(row.model, null, true)}</td>
             <td>${formatPercent(row.error_rate)}</td>
             <td>${row.events}</td>
             <td>${escapeHtml(truncateText(row.top_signature || "-", 80) || "-")}</td>
@@ -4817,7 +5121,7 @@ def render_report_html(history_url: str) -> str:
             <tr class="catalog-row ${active}" data-error-event-key="${escapeHtml(errorEventKey(event))}">
               <td>${formatTime(event.run_started_at || event.started_at)}</td>
               <td><span class="tag">${escapeHtml(event.run_id || "-")}</span></td>
-              <td>${escapeHtml(event.comparison_model || event.model || "-")}</td>
+              <td>${renderModelName(event.comparison_model || event.model, event, true)}</td>
               <td>${escapeHtml(location)}</td>
               <td>${escapeHtml(event.error_category || "-")}</td>
             </tr>
@@ -4890,8 +5194,8 @@ def render_report_html(history_url: str) -> str:
       const summary = currentSummary();
       const latestRun = currentLatestRun();
       const latestModelInfo = normalizeModelInfo(latestRun.model_info, latestRun.model)
-        || modelInfoFor(comparisonModelKey(latestRun.model, normalizeModelInfo(latestRun.model_info, latestRun.model)));
-      const latestComparisonModel = comparisonModelKey(latestRun.model, latestModelInfo);
+        || modelInfoFor(comparisonModelKey(latestRun.model, normalizeModelInfo(latestRun.model_info, latestRun.model), latestRun.lmstudio_parallelism, latestRun));
+      const latestComparisonModel = comparisonModelKey(latestRun.model, latestModelInfo, latestRun.lmstudio_parallelism, latestRun);
       const totalHistoryRuns = reportData.summary?.total_runs || 0;
       document.getElementById("history-source").textContent = `source: ${sourceLabel}`;
       const meta = [
@@ -4905,60 +5209,22 @@ def render_report_html(history_url: str) -> str:
       document.getElementById("header-meta").innerHTML = meta.map((item) => `<span>${item}</span>`).join("");
 
       document.getElementById("summary-text").textContent =
-        `runs=${summary.total_runs || 0} / models=${summary.total_models || 0} / samples=${summary.total_samples || 0} / success=${summary.successful_samples || 0}`;
+        `runs=${summary.total_runs || 0} / conditions=${summary.total_models || 0} / samples=${summary.total_samples || 0} / success=${summary.successful_samples || 0}`;
       document.getElementById("subsummary").textContent =
-        `latest: ${escapeHtml(latestComparisonModel || "-")} / ${escapeHtml(modelFormat(latestModelInfo) || "-")} / ${escapeHtml(modelQuantization(latestModelInfo) || "-")} / api: ${escapeHtml(latestRun.api_base || "-")}`;
+        `latest: ${escapeHtml(modelNameText(latestComparisonModel, latestRun))} / 実行元: ${providerLabel(recordedProvider(latestRun))} / ${escapeHtml(modelFormat(latestModelInfo) || "-")} / ${escapeHtml(modelQuantization(latestModelInfo) || "-")} / api: ${escapeHtml(latestRun.api_base || "-")}`;
     }
 
     function renderStats() {
-      const summary = currentSummary();
-      const showBenchmark = currentHasBenchmarkMetrics();
+      const records = currentRecords();
+      const runs = currentView().history_runs || [];
       const cards = [
-        {
-          label: "最速TTFT",
-          value: summary.cards?.fastest_ttft?.value,
-          model: summary.cards?.fastest_ttft?.model,
-          formatter: formatMs,
-          extra: "history 上の warm 平均で最短",
-        },
-        {
-          label: "最速Warm Latency",
-          value: summary.cards?.fastest_warm_latency?.value,
-          model: summary.cards?.fastest_warm_latency?.model,
-          formatter: formatMs,
-          extra: "history 上の warm 平均総レイテンシ",
-        },
-        {
-          label: "最速Decode Speed",
-          value: summary.cards?.fastest_decode_speed?.value,
-          model: summary.cards?.fastest_decode_speed?.model,
-          formatter: formatTps,
-          extra: "history 上の warm 平均 decode 速度",
-        },
-        {
-          label: "総サンプル数",
-          value: summary.cards?.total_samples?.value,
-          model: "",
-          formatter: (value) => typeof value === "number" ? String(value) : "0",
-          extra: `${summary.successful_samples || 0} success / ${summary.failed_samples || 0} failed`,
-        },
+        ["モデル / 実行元", new Set(records.map(r => JSON.stringify([r.model, r.provider]))).size],
+        ["保存された試行", records.length],
+        ["成功", records.filter(r => r.status === "success").length],
+        ["エラー", records.filter(r => r.status !== "success").length],
       ];
-      if (showBenchmark) {
-        cards.splice(3, 0, {
-          label: "最高Benchmark Score",
-          value: summary.cards?.best_benchmark_score?.value,
-          model: summary.cards?.best_benchmark_score?.model,
-          formatter: (value) => typeof value === "number" && Number.isFinite(value) ? value.toFixed(3) : "N/A",
-          extra: "history 上の warm 平均 exact-match score",
-        });
-      }
-      document.getElementById("stats").innerHTML = cards.map((card) => `
-        <div class="stat">
-          <div class="label">${escapeHtml(card.label)}</div>
-          <div class="value">${card.formatter(card.value)}</div>
-          <div class="extra">${card.model ? `${escapeHtml(card.model)} · ` : ""}${escapeHtml(card.extra)}</div>
-        </div>
-      `).join("");
+      document.getElementById("stats").innerHTML = cards.map(([label, value]) =>
+        `<div class="stat"><div class="label">${label}</div><div class="value">${value}</div><div class="extra">選択中の履歴</div></div>`).join("");
     }
 
     function renderLeaderboardFilter() {
@@ -4997,7 +5263,7 @@ def render_report_html(history_url: str) -> str:
             value="${escapeHtml(model)}"
             ${selected.has(model) ? "checked" : ""}
           />
-          <span>${escapeHtml(model)}</span>
+          <span>${escapeHtml(modelChoiceText(model))}</span>
         </label>
       `).join("");
 
@@ -5030,41 +5296,9 @@ def render_report_html(history_url: str) -> str:
       };
     }
 
+    /* PERFORMANCE_REPORT */
     function renderLeaderboard() {
-      renderLeaderboardFilter();
-      const showBenchmark = currentHasBenchmarkMetrics();
-      const rows = sortRows(selectedLeaderboardRows().map((row) => ({
-        ...row,
-        format_sort: modelFormat(row.model_info),
-        quantization_sort: modelQuantization(row.model_info),
-      })), state.leaderboardSort);
-      document.getElementById("leaderboard-body").innerHTML = rows.length ? rows.map((row) => `
-        <tr>
-          <td>
-            <div class="tag">${escapeHtml(row.model)}</div>
-          </td>
-          <td>${escapeHtml(modelFormat(row.model_info) || "N/A")}</td>
-          <td>${escapeHtml(modelQuantization(row.model_info) || "N/A")}</td>
-          <td>${row.total_samples}</td>
-          <td class="${row.success_rate === 1 ? "ok" : row.success_rate === 0 ? "ng" : ""}">${formatPercent(row.success_rate)}</td>
-          ${showBenchmark ? `<td data-benchmark-column="true">${formatNumber(row.warm_mean_benchmark_score, 3)}</td>` : ""}
-          ${showBenchmark ? `<td data-benchmark-column="true" class="${row.benchmark_correct_rate === 1 ? "ok" : row.benchmark_correct_rate === 0 ? "ng" : ""}">${formatPercent(row.benchmark_correct_rate)}</td>` : ""}
-          ${showBenchmark ? `<td data-benchmark-column="true" class="${row.warm_benchmark_error_rate > 0 ? "ng" : "ok"}">${formatPercent(row.warm_benchmark_error_rate)}</td>` : ""}
-          <td>${formatSec(row.warm_mean_ttft_ms)}</td>
-          <td>${formatSec(row.warm_mean_total_latency_ms)}</td>
-          <td>${formatTps(row.warm_mean_decode_tps)}</td>
-          <td>${formatTps(row.warm_mean_initial_prompt_tps)}</td>
-          <td>${formatTps(row.warm_mean_conversation_prompt_tps)}</td>
-          <td>${formatSec(row.cold_mean_total_latency_ms)}</td>
-        </tr>
-      `).join("") : `<tr><td colspan="${showBenchmark ? 14 : 11}" class="muted">選択中のモデルに一致するデータがありません。</td></tr>`;
-      toggleBenchmarkColumns("#leaderboard-table", showBenchmark);
-      document.getElementById("leaderboard-note").textContent = showBenchmark
-        ? "history.json 全体を集計しています。速度系は Warm 平均を中心に比較し、Correct は cold + warm を通した全体正答率です。Init Prompt は初回投入、Conv Prompt は会話全体の prompt throughput です。usage が返らないモデルでも、同一 prompt の実測 token 数が history 内にあれば代表値で補完します。参照がない場合のみ N/A です。"
-        : "history.json 全体を集計しています。速度系は Warm 平均を中心に比較します。Init Prompt は初回投入、Conv Prompt は会話全体の prompt throughput です。usage が返らないモデルでも、同一 prompt の実測 token 数が history 内にあれば代表値で補完します。参照がない場合のみ N/A です。";
-      document.querySelectorAll("#leaderboard-table th[data-sort]").forEach((th) => {
-        th.className = sortClass(state.leaderboardSort, th.dataset.sort);
-      });
+      renderPerformanceLeaderboard();
     }
 
     function syncCompareSelection() {
@@ -5110,6 +5344,50 @@ def render_report_html(history_url: str) -> str:
       `;
     }
 
+    function flattenConditions(value, prefix = "", result = {}) {
+      if (value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length) {
+        for (const key of Object.keys(value).sort()) flattenConditions(value[key], prefix ? `${prefix}.${key}` : key, result);
+      } else result[prefix] = value;
+      return result;
+    }
+
+    function assessComparison(left, right, axis) {
+      const axes = {
+        model: ["model"], runtime: ["provider", "runtime", "server"],
+        quantization: ["model.artifact", "model.quantization"],
+        parallelism: ["load.requested.parallelism", "load.effective.parallel", "load.effective.parallelism", "measurement.scenario.concurrency_actual"],
+      };
+      const isAxis = (field) => (axes[axis] || []).some((prefix) => field === prefix || field.startsWith(`${prefix}.`));
+      function observedConditions(record) {
+        const conditions = record?.conditions || {};
+        if (record?.benchmark_mode !== "performance") return conditions;
+        return {...conditions, measurement: {...conditions.measurement, scenario: {
+          target_input_tokens: record.target_input_tokens, concurrency_actual: record.concurrency_actual,
+          phase: record.phase, prompt_sha256: record.prompt_sha256,
+          cache_state: performanceMetrics(record).cache_state, sources: performanceMetrics(record).sources}}};
+      }
+      const l = flattenConditions(observedConditions(left)), r = flattenConditions(observedConditions(right));
+      const differences = [...new Set([...Object.keys(l), ...Object.keys(r)])].filter((field) => JSON.stringify(l[field]) !== JSON.stringify(r[field])).map((field) => ({field, left: l[field], right: r[field], axis: isAxis(field)}));
+      const unknown = [...new Set([...(left?.comparison?.unknown_fields || []), ...(right?.comparison?.unknown_fields || [])])].filter((field) => !isAxis(field));
+      if (!left?.conditions || !right?.conditions) unknown.push("旧形式: 測定条件なし");
+      if (left?.comparison?.recovered || right?.comparison?.recovered) unknown.push("中断再開・再試行を含む");
+      const verdict = differences.some((item) => !item.axis) ? "比較軸以外の条件差あり" : unknown.length ? "不明条件があるため同条件か確認できません" : "記録された範囲で比較軸以外は一致";
+      return {differences, unknown, verdict};
+    }
+
+    function renderComparisonConditions(leftModel, rightModel) {
+      const panel = document.getElementById("comparison-conditions");
+      const records = currentRecords();
+      const left = records.find((item) => item.comparison_model === leftModel);
+      const right = records.find((item) => item.comparison_model === rightModel);
+      if (!left || !right) { panel.textContent = ""; return; }
+      const result = assessComparison(left, right, document.getElementById("comparison-axis").value);
+      const display = (value) => escapeHtml(value == null ? "不明" : JSON.stringify(value));
+      panel.innerHTML = `<p><strong>${escapeHtml(result.verdict)}</strong></p>`
+        + (result.unknown.length ? `<p>未確認: ${escapeHtml(result.unknown.join(" / "))}</p>` : "")
+        + (result.differences.length ? `<details><summary>条件差 ${result.differences.length} 件</summary><table><thead><tr><th>条件</th><th>左</th><th>右</th></tr></thead><tbody>${result.differences.map((item) => `<tr><td>${escapeHtml(item.field)}${item.axis ? "（比較軸）" : ""}</td><td style="overflow-wrap:anywhere">${display(item.left)}</td><td style="overflow-wrap:anywhere">${display(item.right)}</td></tr>`).join("")}</tbody></table></details>` : "");
+    }
+
     function renderCompare() {
       syncCompareSelection();
       const showBenchmark = currentHasBenchmarkMetrics();
@@ -5118,27 +5396,31 @@ def render_report_html(history_url: str) -> str:
       const rightSelect = document.getElementById("compare-right-model");
       const compareBody = document.getElementById("compare-body");
 
-      const options = rows.map((row) => `<option value="${escapeHtml(row.model)}">${escapeHtml(row.model)}</option>`).join("");
+      const options = rows.map((row) => `<option value="${escapeHtml(row.model)}">${escapeHtml(modelChoiceText(row.model, row))}</option>`).join("");
       leftSelect.innerHTML = options;
       rightSelect.innerHTML = options;
       leftSelect.value = state.compare.leftModel;
       rightSelect.value = state.compare.rightModel;
 
+      renderComparisonConditions(state.compare.leftModel, state.compare.rightModel);
       if (rows.length < 2) {
+        document.getElementById("comparison-conditions").textContent = "";
         document.getElementById("compare-left-heading").textContent = "Model A";
         document.getElementById("compare-right-heading").textContent = "Model B";
-        compareBody.innerHTML = '<tr><td colspan="4" class="muted">比較には少なくとも 2 モデル必要です。</td></tr>';
+        compareBody.innerHTML = '<tr><td colspan="4" class="muted">比較には少なくとも 2 つの測定条件が必要です。</td></tr>';
         return;
       }
 
       const leftRow = rows.find((row) => row.model === state.compare.leftModel) || rows[0];
       const rightRow = rows.find((row) => row.model === state.compare.rightModel) || rows[1] || rows[0];
-      document.getElementById("compare-left-heading").textContent = leftRow.model;
-      document.getElementById("compare-right-heading").textContent = rightRow.model;
+      document.getElementById("compare-left-heading").textContent = modelNameText(leftRow.model, leftRow);
+      document.getElementById("compare-right-heading").textContent = modelNameText(rightRow.model, rightRow);
 
       const leftInfo = leftRow.model_info;
       const rightInfo = rightRow.model_info;
       compareBody.innerHTML = [
+        compareTextRow("実行元", providerLabel(leftRow.provider), providerLabel(rightRow.provider)),
+        compareTextRow("測定", modelPresentation(leftRow.model, leftRow).measurement || "単独の測定", modelPresentation(rightRow.model, rightRow).measurement || "単独の測定"),
         compareTextRow("Format", modelFormat(leftInfo), modelFormat(rightInfo)),
         compareTextRow("Quantization", modelQuantization(leftInfo), modelQuantization(rightInfo)),
         compareMetricRow("Success Rate", leftRow.success_rate, rightRow.success_rate, formatPercent, (value) => compareDeltaText(value, "percent-points"), true),
@@ -5171,7 +5453,7 @@ def render_report_html(history_url: str) -> str:
       const sorted = sortRows(rows, state.coldwarmSort);
       document.getElementById("coldwarm-body").innerHTML = sorted.length ? sorted.map((row) => `
         <tr>
-          <td><span class="tag">${escapeHtml(row.model)}</span></td>
+          <td>${renderModelName(row.model, row, true)}</td>
           <td>${formatMs(row.cold_mean_ttft_ms)}</td>
           <td>${formatMs(row.warm_mean_ttft_ms)}</td>
           <td class="${deltaClass(row.delta_ttft_ms)}">${deltaText(row.delta_ttft_ms)}</td>
@@ -5181,9 +5463,7 @@ def render_report_html(history_url: str) -> str:
           <td>${formatTps(row.warm_mean_decode_tps)}</td>
         </tr>
       `).join("") : '<tr><td colspan="8" class="muted">cold / warm データがありません。</td></tr>';
-      document.querySelectorAll("#coldwarm-table th[data-sort]").forEach((th) => {
-        th.className = sortClass(state.coldwarmSort, th.dataset.sort);
-      });
+      updateSortHeaders("#coldwarm-table", state.coldwarmSort);
     }
 
     function renderStability() {
@@ -5192,7 +5472,7 @@ def render_report_html(history_url: str) -> str:
       document.getElementById("stability-body").innerHTML = rows.length ? rows.map((row) => `
         <tr>
           <td>
-            <div class="tag">${escapeHtml(row.model)}</div>
+            ${renderModelName(row.model, row, true)}
             <div class="muted" style="margin-top: 8px;">${escapeHtml(modelMetaText(row.model, row.model_info) || "N/A")}</div>
             <div class="table-note">${tokenBadges(row.finish_reasons)}</div>
           </td>
@@ -5209,9 +5489,7 @@ def render_report_html(history_url: str) -> str:
         </tr>
       `).join("") : `<tr><td colspan="${showBenchmark ? 11 : 8}" class="muted">stability に使えるデータがありません。</td></tr>`;
       toggleBenchmarkColumns("#stability-table", showBenchmark);
-      document.querySelectorAll("#stability-table th[data-sort]").forEach((th) => {
-        th.className = sortClass(state.stabilitySort, th.dataset.sort);
-      });
+      updateSortHeaders("#stability-table", state.stabilitySort);
     }
 
     function buildDetailFilters() {
@@ -5223,7 +5501,7 @@ def render_report_html(history_url: str) -> str:
       if (filters.model && !models.includes(filters.model)) filters.model = "";
       if (filters.status && !statuses.includes(filters.status)) filters.status = "";
       modelSelect.innerHTML = ['<option value="">Model</option>'].concat(
-        models.map((model) => `<option value="${escapeHtml(model)}">${escapeHtml(model)}</option>`)
+        models.map((model) => `<option value="${escapeHtml(model)}">${escapeHtml(modelChoiceText(model))}</option>`)
       ).join("");
       statusSelect.innerHTML = ['<option value="">Status</option>'].concat(
         statuses.map((status) => `<option value="${escapeHtml(status)}">${escapeHtml(status)}</option>`)
@@ -5243,6 +5521,8 @@ def render_report_html(history_url: str) -> str:
         const haystack = [
           record.run_id,
           record.model,
+          record.provider,
+          providerLabel(record.provider),
           record.comparison_model,
           record.lmstudio_parallelism,
           record.prompt_text,
@@ -5274,217 +5554,7 @@ def render_report_html(history_url: str) -> str:
       });
     }
 
-      function renderDetailPane(record) {
-        const pane = document.getElementById("detail-pane");
-        if (!record) {
-          pane.innerHTML = '<div class="detail-empty">上段の実行一覧から 1 件選ぶと、この領域に概要、指標、ツール利用、本文ログを整理して表示します。</div>';
-          return;
-        }
-        const recordModelInfo = normalizeModelInfo(record.model_info, record.model) || modelInfoFor(record.comparison_model || record.model);
-        const comparisonModel = record.comparison_model || record.model;
-        const logUrl = resolveLogUrl(record.log_path);
-        const questionResults = Array.isArray(record.question_results)
-          ? record.question_results.filter((item) => item && typeof item === "object")
-          : [];
-        const toolEntries = rankedToolEntries(record.tool_name_counts, 10);
-        const toolBreakdownMarkup = toolEntries.length
-          ? `<div class="detail-tool-breakdown">${toolEntries.map(([name, count]) => `
-              <div class="detail-tool-row">
-                <strong>${escapeHtml(name)}</strong>
-                <span>${escapeHtml(String(count))} call${count === 1 ? "" : "s"}</span>
-              </div>
-            `).join("")}</div>`
-          : '<div class="muted">この試行でツール呼び出しは記録されていません。</div>';
-        const questionTableMarkup = questionResults.length
-          ? questionResults.map((item) => {
-            const itemLogUrl = resolveLogUrl(item.log_path);
-            const logMarkup = itemLogUrl
-              ? `<a href="${escapeHtml(itemLogUrl)}" target="_blank" rel="noopener noreferrer">Open</a>`
-              : escapeHtml(item.log_path || "-");
-            return `
-              <tr>
-                <td>${escapeHtml(item.question_id || "-")}</td>
-                <td>${renderStatusPill(item.status || "-")}</td>
-                <td>${formatNumber(item.tool_call_count, 0)}</td>
-                <td>${formatNumber(item.benchmark_score, 3)}</td>
-                <td>${escapeHtml(truncateText(item.error_signature || item.predicted_answer || "-", 88) || "-")}</td>
-                <td>${logMarkup}</td>
-              </tr>
-            `;
-          }).join("")
-          : '<tr><td colspan="6" class="muted">question 単位の記録はありません。</td></tr>';
-
-        const summaryTags = [
-          renderStatusPill(record.status),
-          renderPhasePill(record.phase, record.iteration),
-          record.benchmark_title ? `<span class="tag">${escapeHtml(record.benchmark_title)}</span>` : "",
-          `<span class="tag">Run ${escapeHtml(record.run_id || "-")}</span>`,
-          record.error_category ? `<span class="tag">${escapeHtml(record.error_category)}</span>` : "",
-        ].filter(Boolean).join("");
-
-        const overviewRows = renderDetailKvRows([
-          ["Run ID", `<span class="tag">${escapeHtml(record.run_id || "-")}</span>`],
-          ["Requested Model", escapeHtml(record.model || "-")],
-          ["LM Studio Model", escapeHtml(modelDisplayName(record.model, recordModelInfo))],
-          ["Benchmark ID", escapeHtml(record.benchmark_id || "-")],
-          ["Benchmark Title", escapeHtml(record.benchmark_title || "-")],
-          ["LM Studio Parallelism", escapeHtml(record.lmstudio_parallelism != null ? String(record.lmstudio_parallelism) : "-")],
-          ["Started", formatTime(record.run_started_at || record.started_at)],
-          ["Format", escapeHtml(modelFormat(recordModelInfo) || "-")],
-          ["Quantization", escapeHtml(modelQuantization(recordModelInfo) || "-")],
-        ]);
-
-        const benchmarkRows = renderDetailKvRows([
-          ["Predicted Answer", escapeHtml(record.predicted_answer || "-")],
-          ["Benchmark Score", escapeHtml(formatNumber(record.benchmark_score, 3))],
-          ["Correct Count", escapeHtml(String(record.benchmark_correct_count ?? "-"))],
-          ["Incorrect Count", escapeHtml(String(record.benchmark_incorrect_count ?? "-"))],
-          ["Benchmark Error Count", escapeHtml(String(record.benchmark_error_count ?? "-"))],
-          ["Finish Reason", escapeHtml(record.finish_reason || "-")],
-          ["Question Count", escapeHtml(record.question_count != null ? String(record.question_count) : "-")],
-        ]);
-
-        const performanceRows = renderDetailKvRows([
-          ["TTFT", escapeHtml(formatMs(record.ttft_ms))],
-          ["Total Latency", escapeHtml(formatMs(record.total_latency_ms))],
-          ["Completion Window", escapeHtml(formatMs(record.completion_window_ms))],
-          ["Initial Prompt Latency", escapeHtml(formatMs(record.initial_prompt_latency_ms))],
-          ["Initial Prompt Speed", escapeHtml(formatTps(record.initial_prompt_tps))],
-          ["Conversation Prompt Latency", escapeHtml(formatMs(record.conversation_prompt_latency_ms))],
-          ["Conversation Prompt Speed", escapeHtml(formatTps(record.conversation_prompt_tps))],
-          ["Decode Speed", escapeHtml(formatTps(record.decode_tps))],
-          ["End-to-End Speed", escapeHtml(formatTps(record.end_to_end_tps))],
-          ["Initial Prompt Tokens", escapeHtml(formatNumber(record.initial_prompt_tokens, 0))],
-          ["Conversation Prompt Tokens", escapeHtml(formatNumber(record.conversation_prompt_tokens, 0))],
-          ["Completion Tokens", escapeHtml(formatNumber(record.completion_tokens, 0))],
-          ["Total Tokens", escapeHtml(formatNumber(record.total_tokens, 0))],
-        ]);
-
-        const promptText = String(record.prompt_text || "");
-        const reasoningText = String(record.reasoning_text || "");
-        const responseText = String(record.response_text || "");
-        const errorText = String(record.error || "");
-        const sections = [
-          renderDetailDisclosure("Prompt", `<pre class="catalog-prompt">${escapeHtml(promptText || "-")}</pre>`, {
-            open: false,
-            count: record.conversation_prompt_tokens != null ? `${formatNumber(record.conversation_prompt_tokens, 0)} tok` : "",
-          }),
-        ];
-        if (errorText || record.error_signature) {
-          sections.push(
-            renderDetailDisclosure("Error", `<pre class="catalog-prompt">${escapeHtml(errorText || record.error_signature || "-")}</pre>`, {
-              open: record.status !== "success",
-              count: record.error_category || "",
-            }),
-          );
-        }
-        if (reasoningText) {
-          sections.push(
-            renderDetailDisclosure("Reasoning", `<pre class="catalog-prompt">${escapeHtml(reasoningText)}</pre>`, {
-              open: false,
-            }),
-          );
-        }
-        if (responseText || record.predicted_answer) {
-          sections.push(
-            renderDetailDisclosure("Response", `<pre class="catalog-prompt">${escapeHtml(responseText || "-")}</pre>`, {
-              open: record.status === "success",
-            }),
-          );
-        }
-
-        pane.innerHTML = `
-          <div class="detail-pane-shell">
-            <div class="detail-pane-header">
-              <div class="detail-pane-title-block">
-                <h2 class="detail-pane-title">${escapeHtml(comparisonModel)}</h2>
-                <div class="detail-pane-subtitle">${escapeHtml(modelIdentityText(record.model, recordModelInfo) || "選択した run の詳細")}</div>
-                <div class="detail-row-tags">${summaryTags}</div>
-              </div>
-              <div class="detail-pane-actions">
-                ${logUrl ? `<a class="btn btn-secondary" href="${escapeHtml(logUrl)}" target="_blank" rel="noopener noreferrer">Open Raw Log</a>` : `<span class="tag">${escapeHtml(record.log_path || "-")}</span>`}
-              </div>
-            </div>
-
-            <div class="detail-summary-grid">
-              <div class="detail-summary-item">
-                <div class="detail-metric-label">Total Latency</div>
-                <div class="detail-metric-value">${escapeHtml(formatMs(record.total_latency_ms))}</div>
-              </div>
-              <div class="detail-summary-item">
-                <div class="detail-metric-label">TTFT</div>
-                <div class="detail-metric-value">${escapeHtml(formatMs(record.ttft_ms))}</div>
-              </div>
-              <div class="detail-summary-item">
-                <div class="detail-metric-label">Initial Prompt</div>
-                <div class="detail-metric-value">${escapeHtml(formatTps(record.initial_prompt_tps))}</div>
-              </div>
-              <div class="detail-summary-item">
-                <div class="detail-metric-label">Conv Prompt</div>
-                <div class="detail-metric-value">${escapeHtml(formatTps(record.conversation_prompt_tps))}</div>
-              </div>
-              <div class="detail-summary-item">
-                <div class="detail-metric-label">Tool Calls</div>
-                <div class="detail-metric-value">${escapeHtml(formatNumber(record.tool_call_count, 0))}</div>
-              </div>
-            </div>
-
-            <div class="detail-columns">
-              <div class="detail-stack">
-                <section class="detail-section">
-                  <h3 class="detail-section-heading">Run Context</h3>
-                  <table class="detail-kv-table"><tbody>${overviewRows}</tbody></table>
-                </section>
-                <section class="detail-section">
-                  <h3 class="detail-section-heading">Performance</h3>
-                  <table class="detail-kv-table"><tbody>${performanceRows}</tbody></table>
-                </section>
-              </div>
-              <div class="detail-stack">
-                <section class="detail-section">
-                  <h3 class="detail-section-heading">Benchmark</h3>
-                  <table class="detail-kv-table"><tbody>${benchmarkRows}</tbody></table>
-                </section>
-                <section class="detail-section">
-                  <h3 class="detail-section-heading">Tool Activity</h3>
-                  <table class="detail-kv-table">
-                    <tbody>
-                      ${renderDetailKvRows([
-                        ["Tool Calls", escapeHtml(formatNumber(record.tool_call_count, 0))],
-                        ["Top Tools", escapeHtml(summarizeCountMap(record.tool_name_counts) || "-")],
-                        ["Error Signature", escapeHtml(record.error_signature || "-")],
-                      ])}
-                    </tbody>
-                  </table>
-                  ${toolBreakdownMarkup}
-                </section>
-              </div>
-            </div>
-
-            <section class="detail-section">
-              <h3 class="detail-section-heading">Question Results</h3>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Question</th>
-                    <th>Status</th>
-                    <th>Tool Calls</th>
-                    <th>Score</th>
-                    <th>Outcome</th>
-                    <th>Log</th>
-                  </tr>
-                </thead>
-                <tbody>${questionTableMarkup}</tbody>
-              </table>
-            </section>
-
-            <section class="detail-section">
-              <h3 class="detail-section-heading">Transcript</h3>
-              ${sections.join("")}
-            </section>
-          </div>
-        `;
-      }
+    /* BENCHMARK_DETAIL */
 
     function renderDetails() {
       const body = document.getElementById("detail-body");
@@ -5513,10 +5583,10 @@ def render_report_html(history_url: str) -> str:
             </td>
             <td>
               <div class="detail-row-cell">
-                <div class="detail-row-title">${escapeHtml(row.comparison_model || row.model)}</div>
+                <div class="detail-row-title">${renderModelName(row.comparison_model || row.model, row)}</div>
                 <div class="detail-row-meta">${escapeHtml(modelMetaText(row.comparison_model || row.model, modelInfo) || "-")}</div>
                 <div class="detail-row-tags">
-                  <span class="tag">${escapeHtml(row.run_id || "-")}</span>
+                  ${renderProviderBadge(row.provider)}
                 </div>
               </div>
             </td>
@@ -5533,16 +5603,12 @@ def render_report_html(history_url: str) -> str:
             <td>
               <div class="detail-metric-grid">
                 ${renderMetricLine("Latency", formatMs(row.total_latency_ms))}
-                ${renderMetricLine("TTFT", formatMs(row.ttft_ms))}
-                ${renderMetricLine("Decode", formatTps(row.decode_tps))}
-                ${renderMetricLine("Init Prompt", formatTps(row.initial_prompt_tps))}
-                ${renderMetricLine("Conv Prompt", formatTps(row.conversation_prompt_tps))}
+                ${row.benchmark_mode === "docker_task" ? "" : `<div>pp TPS ${performanceCell([row], "pp_tps")}</div><div>tg TPS ${performanceCell([row], "tg_tps")}</div><div>TTFT ${performanceCell([row], "ttft_ms")} ms</div>`}
               </div>
             </td>
             <td>
               <div class="detail-row-cell">
-                <div class="detail-row-title">${formatNumber(row.tool_call_count, 0)}</div>
-                <div class="detail-row-meta">${escapeHtml(summarizeToolsCompact(row.tool_name_counts, 2))}</div>
+                ${inspectButton(row) || '<span class="muted">未記録</span>'}
               </div>
             </td>
             <td>
@@ -5555,11 +5621,10 @@ def render_report_html(history_url: str) -> str:
           </tr>
         `;
       }).join("");
-      document.querySelectorAll("#detail-table th[data-sort]").forEach((th) => {
-        th.className = sortClass(state.detailSort, th.dataset.sort);
-      });
+      updateSortHeaders("#detail-table", state.detailSort);
       document.querySelectorAll(".catalog-row").forEach((rowEl) => {
-        rowEl.addEventListener("click", () => {
+        rowEl.addEventListener("click", event => {
+          if (event.target.closest("[data-inspect-scope]")) return;
           state.selectedRecordKey = rowEl.dataset.recordKey;
           renderDetails();
         });
@@ -5567,19 +5632,50 @@ def render_report_html(history_url: str) -> str:
       renderDetailPane(rows.find((row) => recordKey(row) === state.selectedRecordKey) || rows[0]);
     }
 
+    function updateSortHeaders(tableSelector, sortState) {
+      document.querySelectorAll(`${tableSelector} th`).forEach(th => th.setAttribute("aria-sort", "none"));
+      document.querySelectorAll(`${tableSelector} [data-sort]`).forEach(control => {
+        const active = sortState.key === control.dataset.sort;
+        control.classList.toggle("sort-asc", active && sortState.asc);
+        control.classList.toggle("sort-desc", active && !sortState.asc);
+        if (control.tagName === "BUTTON") control.setAttribute("aria-pressed", String(active));
+        if (active) control.closest("th").setAttribute("aria-sort", sortState.asc ? "ascending" : "descending");
+      });
+    }
+
     function bindSorters(tableSelector, sortState, rerender) {
-      document.querySelectorAll(`${tableSelector} th[data-sort]`).forEach((th) => {
-        th.addEventListener("click", () => {
-          const key = th.dataset.sort;
+      document.querySelectorAll(`${tableSelector} [data-sort]`).forEach(control => {
+        const activate = () => {
+          const key = control.dataset.sort;
           if (sortState.key === key) {
             sortState.asc = !sortState.asc;
           } else {
             sortState.key = key;
-            sortState.asc = !["success_rate", "warm_mean_decode_tps"].includes(key);
+            sortState.asc = !["success_rate", "warm_mean_decode_tps", "pp_tps", "tg_tps", "total_tps",
+              "input_tps", "output_tps", "speedup", "benchmark_correct_rate", "overall_benchmark_correct_count"].includes(key);
           }
           rerender();
-        });
+        };
+        control.addEventListener("click", activate);
+        if (control.tagName === "TH") {
+          control.tabIndex = 0;
+          control.addEventListener("keydown", event => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              activate();
+            }
+          });
+        }
       });
+    }
+
+    function bindTableSorters() {
+      bindSorters("#leaderboard-table", state.leaderboardSort, renderLeaderboard);
+      bindSorters("#concurrency-table", state.concurrencySort, renderLeaderboard);
+      bindSorters("#quality-table", state.qualitySort, renderLeaderboard);
+      bindSorters("#coldwarm-table", state.coldwarmSort, renderColdWarm);
+      bindSorters("#stability-table", state.stabilitySort, renderStability);
+      bindSorters("#detail-table", state.detailSort, renderDetails);
     }
 
       function bindTabs() {
@@ -5673,6 +5769,7 @@ def render_report_html(history_url: str) -> str:
       }
 
     function bindCompareControls() {
+      document.getElementById("comparison-axis").addEventListener("change", renderCompare);
       document.getElementById("compare-left-model").addEventListener("change", (event) => {
         state.compare.leftModel = event.target.value;
         renderCompare();
@@ -5772,15 +5869,13 @@ def render_report_html(history_url: str) -> str:
     });
 
       bindTabs();
+      bindInspectControls();
       bindPromptControls();
       bindCompareControls();
       bindDetailFilters();
       bindErrorFilters();
       bindTelemetryControls();
-      bindSorters("#leaderboard-table", state.leaderboardSort, renderLeaderboard);
-      bindSorters("#coldwarm-table", state.coldwarmSort, renderColdWarm);
-      bindSorters("#stability-table", state.stabilitySort, renderStability);
-      bindSorters("#detail-table", state.detailSort, renderDetails);
+      bindTableSorters();
       bindFileLoader();
       renderAll();
       showTab("leaderboard");
@@ -5789,7 +5884,10 @@ def render_report_html(history_url: str) -> str:
 </body>
 </html>
 """
-    return template.replace("__DEFAULT_HISTORY_URL__", json.dumps(history_url, ensure_ascii=False))
+    return (template.replace("__DEFAULT_HISTORY_URL__", json.dumps(history_url, ensure_ascii=False))
+            .replace("__INSPECT_API_URL__", json.dumps(inspect_api_url, ensure_ascii=False))
+            .replace("/* PERFORMANCE_REPORT */", Path(__file__).with_name("performance_report.js").read_text(encoding="utf-8"))
+            .replace("/* BENCHMARK_DETAIL */", Path(__file__).with_name("benchmark_detail.js").read_text(encoding="utf-8")))
 
 
 def write_report_html(output_path: Path, history_path: Path) -> None:

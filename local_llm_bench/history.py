@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from .error_utils import annotate_error_info
+from .persistence import atomic_write_json, FileLock
 from .telemetry import build_turn_usage_record, normalize_turn_usage_records
 
 
@@ -702,6 +703,8 @@ def _backfill_prompt_metrics_from_peer_records(history_runs: list[Dict[str, Any]
         return bucket
 
     for run in history_runs:
+        if run.get("conditions"):
+            continue
         run_prompt_text = _first_text([run.get("prompt_text")])
         run_model = _first_text([run.get("model")]) or "(unknown)"
         raw_records = run.get("records")
@@ -727,6 +730,8 @@ def _backfill_prompt_metrics_from_peer_records(history_runs: list[Dict[str, Any]
                 prompt_bucket[field].append(token_count)
 
     for run in history_runs:
+        if run.get("conditions"):
+            continue
         run_prompt_text = _first_text([run.get("prompt_text")])
         run_model = _first_text([run.get("model")]) or "(unknown)"
         raw_records = run.get("records")
@@ -799,6 +804,10 @@ def normalize_run_entry(run_data: Dict[str, Any], history_dir: Path | None = Non
         enriched.setdefault("benchmark_id", normalized.get("benchmark_id"))
         enriched.setdefault("benchmark_title", normalized.get("benchmark_title") or normalized.get("benchmark_id"))
         enriched.setdefault("question_count", normalized.get("question_count"))
+        for field in ("conditions", "comparison", "timings", "lifecycle", "preflight", "execution_segments"):
+            if field in normalized:
+                enriched.setdefault(field, normalized[field])
+        enriched.setdefault("run_status", normalized.get("status", "legacy"))
         if run_lmstudio_parallelism is not None:
             enriched.setdefault("lmstudio_parallelism", run_lmstudio_parallelism)
         annotate_error_info(enriched)
@@ -870,6 +879,11 @@ def compact_run_entry(run_data: Dict[str, Any]) -> Dict[str, Any]:
             reduced.pop("run_started_at", None)
         if reduced.get("lmstudio_parallelism") == normalized.get("lmstudio_parallelism"):
             reduced.pop("lmstudio_parallelism", None)
+        for field in ("conditions", "comparison", "timings", "lifecycle", "preflight", "execution_segments"):
+            if reduced.get(field) == normalized.get(field):
+                reduced.pop(field, None)
+        if reduced.get("run_status") == (normalized.get("status") or "legacy"):
+            reduced.pop("run_status", None)
         compact_records.append(reduced)
 
     compact["records"] = compact_records
@@ -898,6 +912,11 @@ def load_history_entries(history_path: Path) -> List[Dict[str, Any]]:
 
 
 def update_history(history_path: Path, run_data: Dict[str, Any]) -> None:
+    with FileLock(history_path.with_suffix(".lock"), timeout=30):
+        _update_history_locked(history_path, run_data)
+
+
+def _update_history_locked(history_path: Path, run_data: Dict[str, Any]) -> None:
     history = load_history_entries(history_path)
     normalized_run = normalize_run_entry(run_data)
     run_id = str(normalized_run.get("run_id") or "")
@@ -911,17 +930,11 @@ def update_history(history_path: Path, run_data: Dict[str, Any]) -> None:
         history.append(normalized_run)
     _backfill_prompt_metrics_from_peer_records(history)
     _ensure_parent(history_path)
-    history_path.write_text(
-        json.dumps([compact_run_entry(entry) for entry in history], indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    atomic_write_json(history_path, [compact_run_entry(entry) for entry in history])
 
 
 def write_latest(latest_path: Path, run_data: Dict[str, Any]) -> None:
     normalized_run = normalize_run_entry(run_data)
     _backfill_prompt_metrics_from_peer_records([normalized_run])
     _ensure_parent(latest_path)
-    latest_path.write_text(
-        json.dumps(compact_run_entry(normalized_run), indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    atomic_write_json(latest_path, compact_run_entry(normalized_run))

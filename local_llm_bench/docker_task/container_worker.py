@@ -17,13 +17,12 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, Optional
 
-from ..config import UNSLOTH_STUDIO_PROVIDER
-from ..telemetry import (
-    build_failed_turn_usage_record,
-    build_turn_usage_record,
-    normalize_turn_usage_records,
-    prompt_breakdown_from_messages,
-)
+from ..config import UNSLOTH_STUDIO_PROVIDER, DS4_PROVIDER, LMSTUDIO_PROVIDER, OMLX_PROVIDER
+from ..omlx import OMLXSession, OMLX_API_KEY_ENV
+from ..mlx_serve import MLXServeSession, MLX_SERVE_API_KEY_ENV
+from ..config import MLX_SERVE_PROVIDER
+from ..ds4 import DS4Session, DS4_API_KEY_ENV, apply_ds4_sampling, normalize_ds4_sampling_config, validate_ds4_request
+from ..telemetry import normalize_turn_usage_records
 from ..unsloth_api import UnslothStudioAuthSession, load_unsloth_auth_from_env
 from .ghidra_tool_mode import DEFAULT_GHIDRA_TOOL_MODE, normalize_ghidra_tool_mode
 from .targets import (
@@ -40,7 +39,6 @@ _DOCKER_GHIDRA_MCP_SOURCE_ENV = "LOCAL_LLM_BENCH_DOCKER_GHIDRA_MCP_SOURCE_ROOT"
 _DOCKER_GHIDRA_SERVER_NAME = "mecha_ghidra"
 _DOCKER_PYTHON_SERVER_NAME = "python"
 _FINAL_ANSWER_RE = re.compile(r"FINAL_ANSWER:\s*(.+)", re.IGNORECASE)
-_DEFAULT_MAX_TURNS = 24
 
 
 def _ensure_worker_environment() -> None:
@@ -206,21 +204,6 @@ def _extract_reasoning_text(message: dict[str, Any]) -> str:
     return "".join(parts)
 
 
-def _extract_tool_calls(message: dict[str, Any]) -> list[dict[str, Any]]:
-    raw = message.get("tool_calls")
-    return [item for item in raw if isinstance(item, dict)] if isinstance(raw, list) else []
-
-
-def _assistant_message_payload(*, assistant_text: str, tool_calls: list[dict[str, Any]]) -> dict[str, Any]:
-    payload: dict[str, Any] = {
-        "role": "assistant",
-        "content": assistant_text if assistant_text else "",
-    }
-    if tool_calls:
-        payload["tool_calls"] = tool_calls
-    return payload
-
-
 def _extract_final_answer(text: str) -> Optional[str]:
     matches = _FINAL_ANSWER_RE.findall(text or "")
     if not matches:
@@ -250,13 +233,6 @@ def _tool_result_to_text(result_obj: Any) -> str:
                 return str(structured)
     text = "".join(parts).strip()
     return text or "Success (no output)"
-
-
-def _json_clone(value: Any) -> Any:
-    try:
-        return json.loads(json.dumps(value, ensure_ascii=False, default=str))
-    except TypeError:
-        return value
 
 
 def _drop_none_values(value: Any) -> Any:
@@ -359,38 +335,30 @@ def _chat_completion(
     body: dict[str, Any],
     timeout_sec: float,
     urlopen: Callable[..., Any] = urllib.request.urlopen,
+    now_fn: Callable[[], float] | None = None,
 ) -> tuple[dict[str, Any], float]:
-    started = time.perf_counter()
-    sanitized_body = _drop_none_values(body)
-    request = urllib.request.Request(
-        _completion_url(api_base),
-        data=json.dumps(sanitized_body, ensure_ascii=False).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    try:
-        with urlopen(request, timeout=timeout_sec) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        body_text = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"HTTPError {exc.code}: {body_text}") from exc
-    except urllib.error.URLError as exc:
-        raise RuntimeError(f"URLError: {exc}") from exc
-    latency_ms = max((time.perf_counter() - started) * 1000.0, 0.0)
-    if not isinstance(payload, dict):
-        raise RuntimeError("chat completion response is not a JSON object")
-    return payload, latency_ms
+    from ..lmstudio_api import request_chat_completion
+    from ..metrics import measured_metrics
+    result = request_chat_completion(api_base=api_base, body=_drop_none_values(body),
+        timeout_sec=timeout_sec, now_fn=now_fn or time.perf_counter, urlopen=urlopen)
+    return {"choices": [{"message": result.message, "finish_reason": result.finish_reason}],
+            "usage": result.raw_usage, "timings": result.raw_timings, "stats": result.raw_stats,
+            "metrics": measured_metrics(result.to_dict())}, result.total_latency_ms
 
 
 async def _run_question(payload: Dict[str, Any]) -> Dict[str, Any]:
     trace: Dict[str, Any] = {
-        "turn_limit": _DEFAULT_MAX_TURNS,
         "server_names": [],
         "system_prompt": "",
         "task_prompt": "",
         "turns": [],
     }
     try:
+        from ..inspect_harness import require_inspect, verify_worker_lock
+        require_inspect()
+        verify_worker_lock(payload.get("inspect_lock_sha256"))
+        if "harness" in payload:
+            raise ValueError("harness selection was removed; the worker requires Inspect AI")
         question = payload.get("question") or {}
         if not isinstance(question, dict):
             raise ValueError("question must be an object")
@@ -405,6 +373,13 @@ async def _run_question(payload: Dict[str, Any]) -> Dict[str, Any]:
             raise ValueError("api_base is required")
         provider = str(payload.get("provider") or "").strip().lower()
         trace["provider"] = provider
+        use_lmstudio_defaults = payload.get("settings_source") == "lmstudio_saved"
+        if use_lmstudio_defaults and provider != LMSTUDIO_PROVIDER:
+            raise ValueError("LM Studio saved settings require provider=lmstudio")
+        if payload.get("settings_source") == "omlx_saved" and provider != OMLX_PROVIDER:
+            raise ValueError("oMLX saved settings require provider=omlx")
+        if payload.get("settings_source") == "mlx_serve_saved" and provider != MLX_SERVE_PROVIDER:
+            raise ValueError("mlx-serve saved settings require provider=mlx_serve")
         chat_urlopen: Callable[..., Any] = urllib.request.urlopen
         if provider == UNSLOTH_STUDIO_PROVIDER:
             auth_session = UnslothStudioAuthSession(
@@ -412,6 +387,24 @@ async def _run_question(payload: Dict[str, Any]) -> Dict[str, Any]:
                 openai_api_base=api_base,
             )
             chat_urlopen = auth_session.urlopen
+        elif provider == DS4_PROVIDER:
+            ds4_sampling = normalize_ds4_sampling_config(payload.get("ds4_sampling"))
+            validate_ds4_request(apply_ds4_sampling(payload, ds4_sampling))
+            ds4_session = DS4Session(api_base, os.environ.get(DS4_API_KEY_ENV))
+            api_base = ds4_session.base_url
+            chat_urlopen = ds4_session.urlopen
+        elif provider == OMLX_PROVIDER:
+            from .inspect_agent import request_parameters
+            request_parameters(payload)  # Validate before starting any MCP server.
+            omlx_session = OMLXSession(api_base, os.environ.get(OMLX_API_KEY_ENV))
+            api_base = omlx_session.base_url
+            chat_urlopen = omlx_session.urlopen
+        elif provider == MLX_SERVE_PROVIDER:
+            from .inspect_agent import request_parameters
+            request_parameters(payload)  # Validate before starting any MCP server.
+            mlx_session = MLXServeSession(api_base, os.environ.get(MLX_SERVE_API_KEY_ENV))
+            api_base = mlx_session.base_url
+            chat_urlopen = mlx_session.urlopen
 
         worker_env = {str(key): str(value) for key, value in os.environ.items()}
         python_server_spec = {
@@ -485,6 +478,8 @@ async def _run_question(payload: Dict[str, Any]) -> Dict[str, Any]:
                         await stack.enter_async_context(session_stack)
                         raw_tools, _ = _tool_specs_to_openai(mcp_tools)
                         for tool in raw_tools:
+                            if tool["function"]["name"] in tool_sessions:
+                                raise ValueError("Duplicate MCP tool name: " + tool["function"]["name"])
                             tools.append(tool)
                             tool_sessions[tool["function"]["name"]] = session
 
@@ -500,265 +495,12 @@ async def _run_question(payload: Dict[str, Any]) -> Dict[str, Any]:
                         {"role": "user", "content": task_prompt},
                     ]
 
-                    turn_usage: list[dict[str, Any]] = []
-                    trace["turn_usage"] = turn_usage
-                    tool_call_names_by_id: dict[str, str] = {}
-                    total_prompt_tokens = 0
-                    total_completion_tokens = 0
-                    total_tokens = 0
-                    total_request_latency_ms = 0.0
-                    initial_prompt_tokens: int | None = None
-                    finish_reason: str | None = None
-                    reasoning_parts: list[str] = []
-                    response_parts: list[str] = []
-                    first_response_latency_ms: float | None = None
-                    started = time.perf_counter()
-
-                    for turn_index in range(_DEFAULT_MAX_TURNS):
-                        body: dict[str, Any] = {
-                            "model": payload["model"],
-                            "messages": messages,
-                            "temperature": float(payload.get("temperature") or 0.0),
-                            "max_tokens": int(payload.get("max_tokens") or 1024),
-                            "stream": False,
-                        }
-                        if tools:
-                            body["tools"] = tools
-                            body["tool_choice"] = "auto"
-
-                        request_prompt_breakdown = prompt_breakdown_from_messages(
-                            messages,
-                            tools,
-                            tool_call_names_by_id=tool_call_names_by_id,
-                        )
-                        turn_trace: dict[str, Any] = {
-                            "turn": turn_index + 1,
-                            "request": {
-                                "model": body["model"],
-                                "temperature": body["temperature"],
-                                "max_tokens": body["max_tokens"],
-                                "messages": _json_clone(messages),
-                                "tool_names": [tool["function"]["name"] for tool in tools],
-                            },
-                            "tool_events": [],
-                        }
-                        request_started_perf = time.perf_counter()
-                        try:
-                            response_payload, request_latency_ms = _chat_completion(
-                                api_base=api_base,
-                                body=body,
-                                timeout_sec=timeout_sec,
-                                urlopen=chat_urlopen,
-                            )
-                        except Exception as exc:
-                            elapsed_sec = max(time.perf_counter() - request_started_perf, 0.0)
-                            error_text = _format_exception_text(exc)
-                            lower_error = error_text.lower()
-                            timed_out = isinstance(exc, TimeoutError) or "timeout" in lower_error or "timed out" in lower_error
-                            turn_usage.append(
-                                build_failed_turn_usage_record(
-                                    source="docker_worker",
-                                    turn_index=turn_index + 1,
-                                    error_type="timeout" if timed_out else "api_error",
-                                    error_message=error_text,
-                                    cumulative_prompt_tokens=total_prompt_tokens,
-                                    cumulative_completion_tokens=total_completion_tokens,
-                                    elapsed_sec=elapsed_sec,
-                                    timed_out=timed_out,
-                                    prompt_breakdown=request_prompt_breakdown,
-                                    question_id=str(question.get("id") or ""),
-                                )
-                            )
-                            raise
-                        turn_trace["request_latency_ms"] = request_latency_ms
-                        if isinstance(request_latency_ms, (int, float)) and request_latency_ms > 0:
-                            total_request_latency_ms += float(request_latency_ms)
-                        if first_response_latency_ms is None:
-                            first_response_latency_ms = request_latency_ms
-
-                        usage = response_payload.get("usage")
-                        current_prompt_tokens = 0
-                        current_completion_tokens = 0
-                        current_total_tokens = 0
-                        if isinstance(usage, dict):
-                            current_prompt_tokens = int(usage.get("prompt_tokens") or 0)
-                            total_prompt_tokens += current_prompt_tokens
-                            if initial_prompt_tokens is None and current_prompt_tokens > 0:
-                                initial_prompt_tokens = current_prompt_tokens
-                            current_completion_tokens = int(usage.get("completion_tokens") or 0)
-                            total_completion_tokens += current_completion_tokens
-                            current_total_tokens = int(usage.get("total_tokens") or 0)
-                            total_tokens += current_total_tokens
-                        turn_trace["usage"] = _json_clone(usage)
-                        turn_usage.append(
-                            build_turn_usage_record(
-                                source="docker_worker",
-                                turn_index=turn_index + 1,
-                                prompt_tokens=current_prompt_tokens,
-                                completion_tokens=current_completion_tokens,
-                                total_tokens=current_total_tokens or (current_prompt_tokens + current_completion_tokens),
-                                cumulative_prompt_tokens=total_prompt_tokens,
-                                cumulative_completion_tokens=total_completion_tokens,
-                                elapsed_sec=(
-                                    request_latency_ms / 1000.0
-                                    if isinstance(request_latency_ms, (int, float)) and request_latency_ms > 0
-                                    else None
-                                ),
-                                prompt_breakdown=request_prompt_breakdown,
-                                question_id=str(question.get("id") or ""),
-                            )
-                        )
-
-                        choices = response_payload.get("choices")
-                        if not isinstance(choices, list) or not choices:
-                            raise RuntimeError("chat completion response does not include choices")
-                        choice = choices[0]
-                        if not isinstance(choice, dict):
-                            raise RuntimeError("chat completion choice must be an object")
-                        message = choice.get("message")
-                        if not isinstance(message, dict):
-                            raise RuntimeError("chat completion choice.message must be an object")
-
-                        finish_reason = choice.get("finish_reason") if isinstance(choice.get("finish_reason"), str) else finish_reason
-                        assistant_text = _extract_message_text(message)
-                        reasoning_text = _extract_reasoning_text(message)
-                        if reasoning_text:
-                            reasoning_parts.append(reasoning_text)
-                        if assistant_text:
-                            response_parts.append(assistant_text)
-
-                        tool_calls = _extract_tool_calls(message)
-                        turn_trace["response"] = {
-                            "finish_reason": finish_reason,
-                            "assistant_text": assistant_text,
-                            "reasoning_text": reasoning_text,
-                            "tool_calls": _json_clone(tool_calls),
-                        }
-                        messages.append(
-                            _assistant_message_payload(
-                                assistant_text=assistant_text,
-                                tool_calls=tool_calls,
-                            )
-                        )
-
-                        if tool_calls:
-                            for tool_call in tool_calls:
-                                function_block = tool_call.get("function") or {}
-                                tool_name = str(function_block.get("name") or "").strip()
-                                tool_call_id = tool_call.get("id")
-                                if isinstance(tool_call_id, str) and tool_call_id:
-                                    tool_call_names_by_id[tool_call_id] = tool_name
-                                raw_arguments = function_block.get("arguments")
-                                try:
-                                    tool_arguments = json.loads(raw_arguments) if isinstance(raw_arguments, str) and raw_arguments.strip() else {}
-                                except json.JSONDecodeError:
-                                    tool_arguments = {}
-                                tool_event = {
-                                    "tool_call_id": tool_call.get("id"),
-                                    "tool_name": tool_name,
-                                    "arguments": _json_clone(tool_arguments),
-                                }
-                                session = tool_sessions.get(tool_name)
-                                if session is None:
-                                    tool_text = f"Tool '{tool_name}' is not available."
-                                    tool_event["status"] = "missing"
-                                    tool_event["result"] = tool_text
-                                else:
-                                    try:
-                                        tool_result = await asyncio.wait_for(
-                                            session.call_tool(tool_name, arguments=tool_arguments),
-                                            timeout=timeout_sec,
-                                        )
-                                        tool_text = _tool_result_to_text(tool_result)
-                                        tool_event["status"] = "success"
-                                        tool_event["result"] = tool_text
-                                    except asyncio.TimeoutError as exc:
-                                        tool_event["status"] = "timeout"
-                                        tool_event["error"] = f"tool '{tool_name}' timed out"
-                                        turn_trace["tool_events"].append(tool_event)
-                                        trace["turns"].append(turn_trace)
-                                        raise TimeoutError(f"tool '{tool_name}' timed out") from exc
-                                turn_trace["tool_events"].append(tool_event)
-                                messages.append(
-                                    {
-                                        "role": "tool",
-                                        "tool_call_id": tool_call.get("id"),
-                                        "content": tool_text,
-                                    }
-                                )
-                            trace["turns"].append(turn_trace)
-                            continue
-
-                        final_answer = _extract_final_answer(assistant_text)
-                        turn_trace["final_answer"] = final_answer
-                        trace["turns"].append(turn_trace)
-                        if final_answer is not None:
-                            total_latency_ms = max((time.perf_counter() - started) * 1000.0, 0.0)
-                            completion_window_ms = (
-                                max(total_latency_ms - first_response_latency_ms, 0.0)
-                                if isinstance(first_response_latency_ms, (int, float))
-                                else None
-                            )
-                            decode_tps = (
-                                total_completion_tokens / (completion_window_ms / 1000.0)
-                                if completion_window_ms and completion_window_ms > 0 and total_completion_tokens > 0
-                                else None
-                            )
-                            end_to_end_tps = (
-                                total_completion_tokens / (total_latency_ms / 1000.0)
-                                if total_latency_ms > 0 and total_completion_tokens > 0
-                                else None
-                            )
-                            approx_prompt_tps = (
-                                total_prompt_tokens / (total_request_latency_ms / 1000.0)
-                                if total_request_latency_ms > 0 and total_prompt_tokens > 0
-                                else None
-                            )
-                            initial_prompt_tps = (
-                                initial_prompt_tokens / (first_response_latency_ms / 1000.0)
-                                if initial_prompt_tokens is not None
-                                and isinstance(first_response_latency_ms, (int, float))
-                                and first_response_latency_ms > 0
-                                else None
-                            )
-                            result = {
-                                "status": "success",
-                                "predicted_answer": final_answer,
-                                "response_text": "\n\n".join(part for part in response_parts if part).strip(),
-                                "reasoning_text": "\n\n".join(part for part in reasoning_parts if part).strip(),
-                                "finish_reason": finish_reason,
-                                "error": None,
-                                "ttft_ms": first_response_latency_ms,
-                                "total_latency_ms": total_latency_ms,
-                                "completion_window_ms": completion_window_ms,
-                                "prompt_tokens": total_prompt_tokens or None,
-                                "prompt_latency_ms": total_request_latency_ms or None,
-                                "initial_prompt_tokens": initial_prompt_tokens,
-                                "initial_prompt_latency_ms": first_response_latency_ms,
-                                "initial_prompt_tps": initial_prompt_tps,
-                                "conversation_prompt_tokens": total_prompt_tokens or None,
-                                "conversation_prompt_latency_ms": total_request_latency_ms or None,
-                                "conversation_prompt_tps": approx_prompt_tps,
-                                "completion_tokens": total_completion_tokens or None,
-                                "total_tokens": total_tokens or None,
-                                "decode_tps": decode_tps,
-                                "end_to_end_tps": end_to_end_tps,
-                                "approx_prompt_tps": approx_prompt_tps,
-                                "turn_usage": normalize_turn_usage_records(turn_usage),
-                                "trace": trace,
-                            }
-                            break
-
-                        if turn_index == _DEFAULT_MAX_TURNS - 1:
-                            break
-                        messages.append(
-                            {
-                                "role": "user",
-                                "content": "回答が確定したら `FINAL_ANSWER: <answer>` の形式で1行だけ返してください。",
-                            }
-                        )
-                    if result is None:
-                        pending_error = RuntimeError("model did not return FINAL_ANSWER within the maximum number of turns")
+                    from .inspect_agent import run_agent
+                    def complete(**kwargs):
+                        return _chat_completion(api_base=api_base, urlopen=chat_urlopen, **kwargs)
+                    result = await run_agent(payload=payload, messages=messages, tools_schema=tools,
+                        tool_sessions=tool_sessions, completion=complete, trace=trace,
+                        log_dir=Path(os.environ.get("LOCAL_BENCH_INSPECT_LOG_DIR", "/work/inspect-logs")))
                 except TimeoutError as exc:
                     pending_error = exc
                 except Exception as exc:  # noqa: BLE001
@@ -772,7 +514,7 @@ async def _run_question(payload: Dict[str, Any]) -> Dict[str, Any]:
             raise pending_error
         if trace.get("cleanup_error"):
             raise RuntimeError(str(trace["cleanup_error"]))
-        raise RuntimeError("model did not return FINAL_ANSWER within the maximum number of turns")
+        raise RuntimeError("Inspect agent returned no result")
     except TimeoutError as exc:
         return _error_payload("timeout", exc, trace=trace)
     except Exception as exc:  # noqa: BLE001

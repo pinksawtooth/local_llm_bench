@@ -5,7 +5,7 @@ export PATH="/usr/bin:/bin:/usr/sbin:/sbin:${PATH:-}"
 
 SCRIPT_DIR="$(cd "$(/usr/bin/dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="${SCRIPT_DIR}"
-DEFAULT_IMAGE_TAG="local-llm-bench:bench"
+DEFAULT_IMAGE_TAG="local-llm-bench:inspect-v1"
 DEFAULT_PLATFORM="${DOCKER_PLATFORM:-linux/amd64}"
 DEFAULT_ARM64_GHIDRA_URL="https://github.com/ghidra-user-jp/mecha_ghidra/releases/download/v0.1.1-rc.1/mecha_ghidra_docker_arm64_ghidra_12.0.4_patched.zip"
 DEFAULT_ARM64_GHIDRA_SHA256="03163148e16b8b5908a9f1e2c9e962e78c79e74e45621928c545cbaf10101854"
@@ -30,7 +30,7 @@ Options:
   --ghidra-mcp-repo-url URL
                        mecha_ghidra repository URL
   --ghidra-mcp-ref REF mecha_ghidra git ref (tag/branch/commit). Default: v0.1.1-rc.1
-  --tag NAME           Docker image tag. Default: local-llm-bench:bench
+  --tag NAME           Docker image tag. Default: local-llm-bench:inspect-v1
   --platform VALUE     Docker build platform. Default: linux/amd64
   -h, --help           Show this help
 EOF
@@ -97,9 +97,11 @@ if [[ -z "${GHIDRA_MCP_REPO_URL}" || -z "${GHIDRA_MCP_REF}" ]]; then
 fi
 
 echo "Building ${IMAGE_TAG} for ${PLATFORM}"
+DEPENDENCY_LOCK_SHA256="$(shasum -a 256 "${REPO_ROOT}/requirements.lock" | cut -d ' ' -f 1)"
 echo "Using mecha_ghidra repo: ${GHIDRA_MCP_REPO_URL}@${GHIDRA_MCP_REF}"
 /usr/bin/env docker build \
   --platform "${PLATFORM}" \
+  --build-arg "DEPENDENCY_LOCK_SHA256=${DEPENDENCY_LOCK_SHA256}" \
   --build-arg "GHIDRA_URL=${GHIDRA_URL}" \
   --build-arg "GHIDRA_SHA256=${GHIDRA_SHA256}" \
   --build-arg "GHIDRA_MCP_REPO_URL=${GHIDRA_MCP_REPO_URL}" \

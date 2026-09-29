@@ -1,0 +1,47 @@
+provider: ds4
+mode: docker_task
+api_base: "http://127.0.0.1:8001/v1"
+models:
+  - "glm-5.3-flash"
+
+ds4:
+  management: managed
+  server_path: "../../RevBench/ds4/ds4-server"
+  model_path: "../../RevBench/ds4/gguf/GLM-5.3-Flash-Q2.gguf"
+  context_length: 32768
+  startup_timeout_sec: 1200
+  server_args: []
+
+benchmark:
+  spec: "../benchmarks/d_compile/spec.yaml"
+  answer_key: "../benchmarks/d_compile/spec.answers.yaml"
+  question_timeout_sec: 3600
+  ghidra_tool_mode: unrestricted
+
+docker:
+  image: "local-llm-bench:inspect-v1"
+  platform: "linux/arm64"
+  api_base: "http://host.docker.internal:8001/v1"
+
+ds4_sampling:
+  source: model_config
+  temperature: 1.0
+  top_p: 0.95
+  top_k: 0
+  min_p: 0.0
+
+request:
+  max_tokens: 8192
+  reasoning_effort: high
+
+runs:
+  cold_runs: 1
+  warm_runs: 3
+  timeout_sec: 86400
+  cooldown_sec: 0
+
+output:
+  history_json: "../runs/history.json"
+  latest_json: "../runs/latest_run.json"
+  report_html: "../docs/index.html"
+  run_logs_dir: "../runs/logs"

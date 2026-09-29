@@ -13,11 +13,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
-from ..config import BenchmarkConfig
+from ..config import BenchmarkConfig, DEFAULT_QUESTION_TIMEOUT_SEC
+from ..ds4 import normalize_ds4_sampling_config
 from ..error_utils import merge_excerpts
+from ..conditions import digest, evaluation_identity
+from ..persistence import server_identity
 from ..stats import compute_run_summary
 from ..telemetry import TelemetryRecorder, normalize_turn_usage_records
-from .scorer import score_answer
 from .spec import BenchmarkSpec, Question, load_spec
 from .targets import build_shared_system_prompt, build_task_prompt, resolve_native_binary_target
 
@@ -133,7 +135,7 @@ def _docker_platform_mismatch_error(image: str, requested_platform: str | None) 
     if actual == ("linux", "arm64") and requested == ("linux", "amd64"):
         return (
             message
-            + " Apple Silicon 環境なら bench_d_compile_arm64.yaml を使うか、"
+            + " Apple Silicon 環境なら configs/bench_d_compile_arm64.yaml を使うか、"
             + "同じタグの image を linux/amd64 で再ビルドしてください。"
         )
     return message + " docker.platform をローカル image と合わせるか、指定 platform で image を再ビルドしてください。"
@@ -168,11 +170,14 @@ def _write_request_payload(
 ) -> Path:
     payload = {
         "provider": config.provider,
+        "inspect_lock_sha256": evaluation_identity(config).get("dependency_lock_sha256"),
+        "inspect": {"max_turns": config.inspect.max_turns, "max_tool_calls": config.inspect.max_tool_calls,
+                    "tool_timeout_sec": config.inspect.tool_timeout_sec},
         "api_base": config.docker_api_base,
         "model": selected_model,
-        "temperature": config.request.temperature,
-        "max_tokens": config.request.max_tokens,
-        "timeout_sec": config.benchmark_question_timeout_sec or config.runs.timeout_sec,
+        **config.recorded_request_parameters(),
+        **({"ds4_sampling": normalize_ds4_sampling_config(config.ds4_sampling)} if config.provider == "ds4" else {}),
+        "timeout_sec": config.benchmark_question_timeout_sec or DEFAULT_QUESTION_TIMEOUT_SEC,
         "ghidra_tool_mode": config.benchmark_ghidra_tool_mode,
         "system_prompt": build_shared_system_prompt(),
         "task_prompt": build_task_prompt(question.prompt, Path(staged_binary_ref) if staged_binary_ref else None),
@@ -207,6 +212,7 @@ def _safe_sum(records: list[dict[str, Any]], field: str) -> float | None:
 def _coerce_question_result(
     question: Question,
     worker_result: dict[str, Any],
+    inspect_info: dict[str, Any],
 ) -> dict[str, Any]:
     status = str(worker_result.get("status") or "error")
     predicted_answer = worker_result.get("predicted_answer")
@@ -215,9 +221,10 @@ def _coerce_question_result(
     incorrect_count = 0
     error_count = 0
     if status == "success":
-        score_result = score_answer(question.answer_type, predicted_answer, question.gold_answer)
-        score = score_result.score
-        correct = score_result.correct
+        if inspect_info.get("status") != "success" or inspect_info.get("score") not in (0.0, 1.0):
+            raise RuntimeError("A successful question requires an Inspect Scorer result")
+        score = float(inspect_info["score"])
+        correct = score == 1.0
         incorrect_count = 0 if correct else 1
     else:
         error_count = 1
@@ -254,6 +261,7 @@ def _coerce_question_result(
         "stderr_excerpt": worker_result.get("stderr_excerpt"),
         "log_path": None,
         "turn_usage": normalize_turn_usage_records(worker_result.get("turn_usage")),
+        **{key: worker_result[key] for key in ("metrics", "inference_requests") if key in worker_result},
     }
 
 
@@ -276,6 +284,7 @@ def _run_question_in_docker(
     question: Question,
     docker_executor: Callable[..., Any],
     docker_env: Optional[dict[str, str]] = None,
+    inspect_log_dir: Path | None = None,
 ) -> dict[str, Any]:
     with tempfile.TemporaryDirectory(prefix="local-llm-bench-docker-") as tmpdir:
         bundle_dir = Path(tmpdir)
@@ -300,21 +309,31 @@ def _run_question_in_docker(
                 # Docker image now carries its own pinned mecha_ghidra install.
                 env[_DOCKER_GHIDRA_MCP_SOURCE_ENV] = "/work/.local_llm_bench_bootstrap/ghidra_mcp_src"
 
+        container_name = f"local-llm-bench-{uuid.uuid4().hex}"
         cmd = [
             _docker_binary(),
             "run",
             "--rm",
+            "--name",
+            container_name,
+            "--label",
+            f"local-llm-bench.server={digest(server_identity(config.api_base))}",
             "-v",
             f"{bundle_dir}:/work",
             "-v",
-            f"{_REPO_ROOT}:/opt/local_llm_bench:ro",
+            f"{_REPO_ROOT / 'local_llm_bench'}:/opt/local_llm_bench/local_llm_bench:ro",
             "-w",
             "/work",
             "-e",
             "HOME=/work/home",
             "-e",
+            "INSPECT_DISPLAY=log",
+            "-e",
             f"{_DOCKER_GHIDRA_MCP_SOURCE_ENV}={env.get(_DOCKER_GHIDRA_MCP_SOURCE_ENV, '')}",
         ]
+        if inspect_log_dir is not None:
+            inspect_log_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+            cmd.extend(["-v", f"{inspect_log_dir}:/inspect-logs", "-e", "LOCAL_BENCH_INSPECT_LOG_DIR=/inspect-logs"])
         for key, value in sorted((docker_env or {}).items()):
             if not str(key).strip():
                 continue
@@ -371,7 +390,7 @@ def _run_question_in_docker(
                 }
                 return result
 
-        timeout_sec = float(config.benchmark_question_timeout_sec or config.runs.timeout_sec)
+        timeout_sec = float(request_payload["timeout_sec"])
         try:
             completed = docker_executor(
                 cmd,
@@ -381,6 +400,8 @@ def _run_question_in_docker(
                 env=env,
             )
         except subprocess.TimeoutExpired as exc:
+            if docker_executor is subprocess.run:
+                subprocess.run([cmd[0], "rm", "-f", container_name], capture_output=True, timeout=15)
             result = {
                 "status": "timeout",
                 "predicted_answer": None,
@@ -415,6 +436,11 @@ def _run_question_in_docker(
                 "parsed_worker_result": dict(result),
             }
             return result
+
+        except BaseException:
+            if docker_executor is subprocess.run:
+                subprocess.run([cmd[0], "rm", "-f", container_name], capture_output=True, timeout=15)
+            raise
 
         stdout = (completed.stdout or "").strip()
         stderr = (completed.stderr or "").strip()
@@ -585,7 +611,21 @@ def _aggregate_attempt_record(
         else 0.0
     )
 
+    inference = {}
+    if any("inference_requests" in result for result in question_results):
+        from ..metrics import aggregate_inference_metrics
+        # An old resumed question without observations prevents an incomplete
+        # subset from being presented as a measurement of the whole trial.
+        requests = [request for result in question_results
+                    for request in (result.get("inference_requests") or
+                                    [{"question_id": result.get("question_id"), "status": "unavailable", "metrics": {}}])]
+        inference = {"metrics": aggregate_inference_metrics(requests), "inference_requests": requests}
+        ttft_ms = inference["metrics"]["ttft_ms"]
+        decode_tps = inference["metrics"]["tg_tps"]
+        completion_window_ms = inference["metrics"]["post_first_token_ms"]
+
     return {
+        **inference,
         "phase": phase,
         "iteration": iteration,
         "started_at": started_at,
@@ -637,11 +677,14 @@ def run_docker_task_benchmark(
     sleep_fn: Callable[[float], None] = time.sleep,
     now_fn: Callable[[], float] = time.perf_counter,
     spec: BenchmarkSpec | None = None,
+    execution: Any = None,
 ) -> Dict[str, Any]:
     selected_model = model or (config.models[0] if len(config.models) == 1 else None)
     if not selected_model:
         raise ValueError("run_docker_task_benchmark には単一モデルを渡してください。")
     display_model = requested_model or selected_model
+    from ..inspect_harness import require_inspect
+    require_inspect()
 
     benchmark_spec = spec or load_spec(config.benchmark_spec_path, config.benchmark_answer_key_path)
     prompt_text = "\n\n".join(question.prompt for question in benchmark_spec.questions)
@@ -649,8 +692,8 @@ def run_docker_task_benchmark(
         ("warm", idx + 1) for idx in range(config.runs.warm_runs)
     ]
 
-    run_id = uuid.uuid4().hex[:8]
-    started_at = _utc_iso_now()
+    run_id = execution.run_id if execution else uuid.uuid4().hex[:8]
+    started_at = execution.started_at if execution else _utc_iso_now()
     started_perf = now_fn()
     telemetry = TelemetryRecorder(
         run_id=run_id,
@@ -677,6 +720,16 @@ def run_docker_task_benchmark(
 
     emit(f"[Model] {selected_model}")
     for phase, iteration in phases:
+        cached_units = {
+            question.id: execution.cached(phase, iteration, question.id) if execution else None
+            for question in benchmark_spec.questions
+        }
+        pending = [question for question in benchmark_spec.questions if cached_units[question.id] is None]
+        if execution and pending:
+            def warmup(api_model):
+                result = _run_question_in_docker(config=config, selected_model=api_model, question=pending[0], docker_executor=docker_executor, docker_env=docker_env)
+                return {"status": result.get("status"), "error": result.get("error"), "elapsed_sec": result.get("elapsed_sec")}
+            selected_model = execution.before_attempt(phase, iteration, warmup)
         attempt_started_at = _utc_iso_now()
         emit(f"  - {phase} #{iteration} ...")
         attempt_span = telemetry.start_span(
@@ -689,6 +742,11 @@ def run_docker_task_benchmark(
         question_results: list[dict[str, Any]] = []
         question_log_entries: list[dict[str, Any]] = []
         for question in benchmark_spec.questions:
+            cached = cached_units[question.id]
+            if cached is not None:
+                question_results.append(cached["result"])
+                question_log_entries.append({"question_index": len(question_results) - 1, "question_id": question.id, "payload": cached["log"]})
+                continue
             emit(f"    * question={question.id}")
             question_span = telemetry.start_span(
                 "question",
@@ -697,13 +755,16 @@ def run_docker_task_benchmark(
                 question_id=question.id,
                 benchmark_id=benchmark_spec.id,
             )
-            raw_result = _run_question_in_docker(
-                config=config,
-                selected_model=selected_model,
-                question=question,
-                docker_executor=docker_executor,
-                docker_env=docker_env,
-            )
+            inspect_info: dict = {}
+            from ..inspect_harness import run_unit, unit_log_directory
+            inspect_dir = unit_log_directory(config, run_id, phase, iteration, question.id)
+            def invoke():
+                return _run_question_in_docker(config=config, selected_model=selected_model,
+                    question=question, docker_executor=docker_executor, docker_env=docker_env,
+                    inspect_log_dir=inspect_dir / "worker")
+            raw_result = run_unit(config=config, model=selected_model, operation=invoke,
+                question=question, log_dir=inspect_dir,
+                metadata={"run_id": run_id, "phase": phase, "iteration": iteration}, info=inspect_info)
             question_log_entries.append(
                 {
                     "question_index": len(question_results),
@@ -711,9 +772,14 @@ def run_docker_task_benchmark(
                     "payload": raw_result.get("_question_log") or {},
                 }
             )
-            question_result = _coerce_question_result(question, raw_result)
+            question_result = _coerce_question_result(question, raw_result, inspect_info)
+            if inspect_info:
+                question_result["inspect"] = inspect_info
+                raw_result.setdefault("_question_log", {})["inspect"] = inspect_info
             host_wall_ms = question_span.finish(status=str(question_result.get("status") or "error"), metrics=question_result)
             question_result["host_wall_ms"] = host_wall_ms
+            if execution:
+                execution.save_unit(phase, iteration, question.id, question_result, raw_result.get("_question_log") or {})
             question_results.append(question_result)
         attempt_record = _aggregate_attempt_record(
             phase=phase,
@@ -724,6 +790,11 @@ def run_docker_task_benchmark(
         )
         attempt_wall_ms = attempt_span.finish(status=str(attempt_record.get("status") or "error"), metrics=attempt_record)
         attempt_record["attempt_wall_ms"] = attempt_wall_ms
+        if execution:
+            if any(value is not None for value in cached_units.values()):
+                attempt_record["attempt_wall_ms"] = sum(item.get("host_wall_ms", 0) for item in question_results)
+                attempt_record["attempt_wall_source"] = "sum_of_saved_question_wall_times"
+            attempt_record["measurement"] = {"protocol": execution.protocol, "scope": "suite", "cache_state": "unknown", "recovered": execution.recovering}
         records.append(attempt_record)
         attempt_logs.append(
             {
@@ -768,6 +839,7 @@ def run_docker_task_benchmark(
         "ended_at": ended_at,
         "duration_sec": duration_sec,
         "provider": config.provider,
+        "evaluation": evaluation_identity(config),
         "api_base": config.docker_api_base,
         "model": display_model,
         "api_model": selected_model,
@@ -777,8 +849,7 @@ def run_docker_task_benchmark(
         "benchmark_title": benchmark_spec.title,
         "question_count": len(benchmark_spec.questions),
         "request": {
-            "temperature": config.request.temperature,
-            "max_tokens": config.request.max_tokens,
+            **config.recorded_request_parameters(),
         },
         "runs": {
             "cold_runs": config.runs.cold_runs,

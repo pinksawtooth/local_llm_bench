@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from local_llm_bench.config import (
+    DEFAULT_CONFIG_PATH,
     DEFAULT_DOCKER_UNSLOTH_STUDIO_API_BASE,
     DEFAULT_UNSLOTH_STUDIO_API_BASE,
     load_config,
@@ -14,6 +15,53 @@ from local_llm_bench.config import (
 
 
 class ConfigTests(unittest.TestCase):
+    def test_default_config_points_to_bundled_directory(self) -> None:
+        from benchmark import build_arg_parser
+
+        root = Path(__file__).resolve().parents[1]
+        self.assertEqual(DEFAULT_CONFIG_PATH, Path("configs/bench.yaml"))
+        self.assertEqual(build_arg_parser().parse_args([]).config, DEFAULT_CONFIG_PATH)
+        with patch("os.getcwd", return_value=str(root)):
+            loaded = load_config(None)
+        self.assertEqual(loaded.config_path, root / "configs/bench.yaml")
+        self.assertEqual(loaded.output.run_logs_dir, root / "runs/logs")
+
+    def test_bundled_configs_preserve_output_and_resource_locations(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        paths = sorted((root / "configs").glob("bench*.yaml"))
+        self.assertTrue(paths)
+        # Config loading must not read the user's saved oMLX credentials.
+        with patch("local_llm_bench.config.resolve_omlx_api_key", return_value="fixture-key"):
+            for path in paths:
+                with self.subTest(config=path.name):
+                    loaded = load_config(path)
+                    self.assertEqual(loaded.output.history_json, root / "runs/history.json")
+                    self.assertEqual(loaded.output.latest_json, root / "runs/latest_run.json")
+                    self.assertEqual(loaded.output.report_html, root / "docs/index.html")
+                    self.assertEqual(loaded.output.run_logs_dir, root / "runs/logs")
+                    if loaded.mode == "docker_task":
+                        self.assertEqual(loaded.benchmark_question_timeout_sec, 3600.0)
+                        self.assertIsNone(loaded.inspect.max_turns)
+                        self.assertIsNone(loaded.inspect.max_tool_calls)
+                        task = "mafc" if path.name.startswith("bench_mafc_") else "d_compile"
+                        self.assertEqual(loaded.benchmark_spec_path, root / "benchmarks" / task / "spec.yaml")
+                        self.assertEqual(loaded.benchmark_answer_key_path, root / "benchmarks" / task / "spec.answers.yaml")
+                        self.assertTrue(loaded.benchmark_spec_path.is_file())
+                        self.assertTrue(loaded.benchmark_answer_key_path.is_file())
+                    if loaded.provider == "ds4":
+                        ds4_root = root.parent / "RevBench/ds4"
+                        self.assertEqual(Path(loaded.ds4["server_path"]).resolve(), ds4_root / "ds4-server")
+                        self.assertEqual(Path(loaded.ds4["model_path"]).resolve().parent, ds4_root / "gguf")
+
+    def test_docker_task_defaults_to_one_hour_independently_of_run_timeout(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "bench.yaml"
+            path.write_text("models: [fixture]\nmode: docker_task\nbenchmark: {spec: spec.yaml}\n"
+                            "docker: {image: fixture}\nruns: {timeout_sec: 43200}\n")
+            loaded = load_config(path)
+        self.assertEqual(loaded.benchmark_question_timeout_sec, 3600.0)
+        self.assertEqual(loaded.runs.timeout_sec, 43200.0)
+
     def test_load_config_resolves_relative_outputs(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
@@ -26,6 +74,7 @@ class ConfigTests(unittest.TestCase):
                     prompt:
                       text: "hello"
                     request:
+                      use_lmstudio_defaults: false
                       temperature: 0.1
                       max_tokens: 128
                     lmstudio:
@@ -109,9 +158,12 @@ class ConfigTests(unittest.TestCase):
                 cli_parallelism=4,
                 cli_parallelism_sweep="2,3,4",
             )
+            single = load_config(config_path, cli_parallelism=3)
 
         self.assertEqual(loaded.lmstudio_load.parallelism, 4)
         self.assertEqual(loaded.lmstudio_load.parallelism_sweep, [2, 3, 4])
+        self.assertEqual(single.lmstudio_load.parallelism_sweep, [])
+        self.assertEqual(single.lmstudio_load.parallelism, 3)
 
     def test_load_config_supports_docker_task_mode(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

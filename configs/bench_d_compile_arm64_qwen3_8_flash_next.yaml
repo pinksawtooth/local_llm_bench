@@ -1,0 +1,32 @@
+provider: lmstudio
+mode: docker_task
+api_base: "http://localhost:1234/v1"
+models:
+  - "qwen3.8-flash-next"
+
+benchmark:
+  spec: "../benchmarks/d_compile/spec.yaml"
+  answer_key: "../benchmarks/d_compile/spec.answers.yaml"
+  question_timeout_sec: 3600
+  ghidra_tool_mode: unrestricted
+
+docker:
+  image: "local-llm-bench:inspect-v1"
+  platform: "linux/arm64"
+  api_base: "http://host.docker.internal:1234/v1"
+
+request:
+  # 出力上限・温度・サンプリング・思考設定はLM Studioの保存設定を使用。
+  use_lmstudio_defaults: true
+
+runs:
+  cold_runs: 1
+  warm_runs: 3
+  timeout_sec: 43200
+  cooldown_sec: 0
+
+output:
+  history_json: "../runs/history.json"
+  latest_json: "../runs/latest_run.json"
+  report_html: "../docs/index.html"
+  run_logs_dir: "../runs/logs"

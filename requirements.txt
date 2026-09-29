@@ -1,6 +1,7 @@
 pyyaml>=6.0.1,<7
 python-dotenv>=1.0.1,<2
-litellm>=1.74.0,<2
+# The transport adapters do not use LiteLLM. Keep its conflicting dependencies out.
+inspect-ai==0.3.263
 mcp>=1.0.0,<2
 pyghidra>=3.0.0,<4
 fasteners>=0.19,<1

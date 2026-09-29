@@ -1,0 +1,30 @@
+{
+  "repository": "https://github.com/SECCON/SECCON_Beginners_CTF_2025",
+  "commit": "4634eb65935a085def1c88abab2c67752d5fe822",
+  "challenge_path": "reversing/MAFC",
+  "author": "JUCK",
+  "category": "reversing",
+  "difficulty": "hard",
+  "archive": {
+    "path": "data/MAFC.zip",
+    "url": "https://raw.githubusercontent.com/SECCON/SECCON_Beginners_CTF_2025/4634eb65935a085def1c88abab2c67752d5fe822/reversing/MAFC/MAFC.zip",
+    "size_bytes": 7547,
+    "sha256": "07b1834ee885868fffed4630e701a5f27fc8708ca1f6b05c68fc42aa80a49b94"
+  },
+  "files": [
+    {
+      "member": "MAFC/MalwareAnalysis-FirstChallenge.exe",
+      "size_bytes": 15872,
+      "sha256": "da94bce1a66ea3e46b6e285b9e4415b10166aedb72c7509981996d274b27bd09",
+      "format": "PE32+",
+      "architecture": "x86_64"
+    },
+    {
+      "member": "MAFC/flag.encrypted",
+      "size_bytes": 64,
+      "sha256": "20e5fbfc4f1a5f047385dd1bc254d794f703ad23f7bbcfa0ea1135c5f4af07de"
+    }
+  ],
+  "answer_source": "https://github.com/SECCON/SECCON_Beginners_CTF_2025/blob/4634eb65935a085def1c88abab2c67752d5fe822/reversing/MAFC/FLAG",
+  "metadata_source": "https://github.com/SECCON/SECCON_Beginners_CTF_2025/blob/4634eb65935a085def1c88abab2c67752d5fe822/reversing/MAFC/challenge.yml"
+}

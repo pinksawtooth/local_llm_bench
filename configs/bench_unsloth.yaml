@@ -4,7 +4,7 @@ models:
 
 auth:
   username: "unsloth"
-  password: "Bm2PT9YJERjEXcF"
+  password: "samsepi0l"
 
 
 prompt:
@@ -21,6 +21,7 @@ runs:
   cooldown_sec: 0
 
 output:
-  history_json: "runs/history.json"
-  latest_json: "runs/latest_run.json"
-  report_html: "docs/index.html"
+  history_json: "../runs/history.json"
+  latest_json: "../runs/latest_run.json"
+  report_html: "../docs/index.html"
+  run_logs_dir: "../runs/logs"

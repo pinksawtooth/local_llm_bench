@@ -1,0 +1,23 @@
+provider: omlx
+mode: performance
+api_base: "http://127.0.0.1:8000/v1"
+models:
+  - "Qwopus3.8-27B-Flash-oQ4e-mtp"
+  - "Qwen3.8-Flash-Next-oQ4e-mtp"
+request:
+  use_omlx_defaults: true
+performance:
+  # 共通テキストの入力目安。実トークン数はAPIのusageから記録します。
+  input_tokens: [1024, 4096, 8192]
+  concurrency: [1, 2, 4]
+  # memory_pid: 12345  # 指定時のみ、そのプロセスと子のRSSを観測。
+runs:
+  cold_runs: 0
+  warm_runs: 3
+  timeout_sec: 43200
+  cooldown_sec: 0
+output:
+  history_json: "../runs/history.json"
+  latest_json: "../runs/latest_run.json"
+  report_html: "../docs/index.html"
+  run_logs_dir: "../runs/logs"

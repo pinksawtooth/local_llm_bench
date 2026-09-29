@@ -1,0 +1,32 @@
+provider: omlx
+mode: docker_task
+api_base: "http://127.0.0.1:8000/v1"
+models:
+  - "Qwopus3.8-27B-Flash-oQ4e-mtp"
+  - "Qwen3.8-Flash-Next-oQ4e-mtp"
+
+benchmark:
+  spec: "../benchmarks/mafc/spec.yaml"
+  answer_key: "../benchmarks/mafc/spec.answers.yaml"
+  question_timeout_sec: 3600
+  ghidra_tool_mode: unrestricted
+
+docker:
+  image: "local-llm-bench:inspect-v1"
+  platform: "linux/arm64"
+  api_base: "http://host.docker.internal:8000/v1"
+
+request:
+  use_omlx_defaults: true
+
+runs:
+  cold_runs: 1
+  warm_runs: 3
+  timeout_sec: 43200
+  cooldown_sec: 0
+
+output:
+  history_json: "../runs/history.json"
+  latest_json: "../runs/latest_run.json"
+  report_html: "../docs/index.html"
+  run_logs_dir: "../runs/logs"

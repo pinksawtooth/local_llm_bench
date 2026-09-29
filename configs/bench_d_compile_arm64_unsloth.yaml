@@ -6,16 +6,16 @@ models:
 
 auth:
   username: "unsloth"
-  password: "Bm2PT9YJERjEXcF"
+  password: "samsepi0l"
 
 benchmark:
-  spec: "benchmarks/d_compile/spec.yaml"
-  answer_key: "benchmarks/d_compile/spec.answers.yaml"
-  question_timeout_sec: 600
+  spec: "../benchmarks/d_compile/spec.yaml"
+  answer_key: "../benchmarks/d_compile/spec.answers.yaml"
+  question_timeout_sec: 3600
   ghidra_tool_mode: unrestricted
 
 docker:
-  image: "local-llm-bench:bench"
+  image: "local-llm-bench:inspect-v1"
   platform: "linux/arm64"
 
 request:
@@ -29,6 +29,7 @@ runs:
   cooldown_sec: 0
 
 output:
-  history_json: "runs/history.json"
-  latest_json: "runs/latest_run.json"
-  report_html: "docs/index.html"
+  history_json: "../runs/history.json"
+  latest_json: "../runs/latest_run.json"
+  report_html: "../docs/index.html"
+  run_logs_dir: "../runs/logs"

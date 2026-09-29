@@ -1,0 +1,27 @@
+provider: omlx
+mode: prompt
+api_base: "http://127.0.0.1:8000/v1"
+# 2026-09-17: ローカルのoMLXモデル設定・ディレクトリで確認。実機推論は未実施。
+# oMLXサーバーは事前に起動してください。保存設定・ピン留めは変更しません。
+models:
+  - "Qwopus3.8-27B-Flash-oQ4e-mtp"
+  - "Qwen3.8-Flash-Next-oQ4e-mtp"
+
+prompt:
+  text: "pythonでライブラリを使わずにRC4を実装して"
+
+request:
+  # 出力上限・温度・サンプリング・思考設定はoMLXの保存設定を使用。
+  use_omlx_defaults: true
+
+runs:
+  cold_runs: 1
+  warm_runs: 3
+  timeout_sec: 43200
+  cooldown_sec: 0
+
+output:
+  history_json: "../runs/history.json"
+  latest_json: "../runs/latest_run.json"
+  report_html: "../docs/index.html"
+  run_logs_dir: "../runs/logs"

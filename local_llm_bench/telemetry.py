@@ -278,7 +278,7 @@ def normalize_turn_usage_records(value: Any) -> list[Dict[str, Any]]:
             "cumulative_completion_tokens",
             "cumulative_total_tokens",
         ):
-            record[key] = _safe_int(raw_record.get(key), default=0)
+            record[key] = None if raw_record.get(key) is None else _safe_int(raw_record.get(key), default=0)
 
         for key in (
             "elapsed_sec",
@@ -316,6 +316,8 @@ def normalize_turn_usage_records(value: Any) -> list[Dict[str, Any]]:
                 for key, item in timing_sources.items()
                 if isinstance(key, str) and isinstance(item, str)
             }
+        if isinstance(raw_record.get("metrics"), dict) and raw_record["metrics"].get("version") == 1:
+            record["metrics"] = raw_record["metrics"]
 
         records.append(record)
     return records
@@ -341,14 +343,17 @@ def build_turn_usage_record(
     post_first_token_sec: Any = None,
     prompt_breakdown: Dict[str, Any] | None = None,
     timing_sources: Dict[str, str] | None = None,
+    metrics: Dict[str, Any] | None = None,
     question_id: str | None = None,
 ) -> Dict[str, Any]:
-    prompt_count = max(_safe_int(prompt_tokens), 0)
-    cached_count = max(_safe_int(cached_prompt_tokens), 0)
-    completion_count = max(_safe_int(completion_tokens), 0)
-    total_count = max(_safe_int(total_tokens, default=prompt_count + completion_count), 0)
-    cumulative_prompt = max(_safe_int(cumulative_prompt_tokens, default=prompt_count), 0)
-    cumulative_completion = max(_safe_int(cumulative_completion_tokens, default=completion_count), 0)
+    prompt_count = max(_safe_int(prompt_tokens), 0) if prompt_tokens is not None else None
+    cached_count = max(_safe_int(cached_prompt_tokens), 0) if cached_prompt_tokens is not None else None
+    completion_count = max(_safe_int(completion_tokens), 0) if completion_tokens is not None else None
+    def count_or(value, default):
+        return max(_safe_int(value), 0) if value is not None else default
+    total_count = count_or(total_tokens, prompt_count + completion_count if prompt_count is not None and completion_count is not None else None)
+    cumulative_prompt = count_or(cumulative_prompt_tokens, prompt_count)
+    cumulative_completion = count_or(cumulative_completion_tokens, completion_count)
 
     record: Dict[str, Any] = {
         "source": source,
@@ -359,17 +364,19 @@ def build_turn_usage_record(
         "total_tokens": total_count,
         "cumulative_prompt_tokens": cumulative_prompt,
         "cumulative_completion_tokens": cumulative_completion,
-        "cumulative_total_tokens": cumulative_prompt + cumulative_completion,
+        "cumulative_total_tokens": cumulative_prompt + cumulative_completion if cumulative_prompt is not None and cumulative_completion is not None else None,
         "success": bool(success),
     }
     if question_id:
         record["question_id"] = str(question_id)
+    if metrics is not None:
+        record["metrics"] = metrics
 
     elapsed = _safe_positive_float(elapsed_sec)
     if elapsed is not None:
         record["elapsed_sec"] = elapsed
-        record["completion_tokens_per_sec"] = completion_count / elapsed if completion_count else 0.0
-        record["total_tokens_per_sec"] = total_count / elapsed if total_count else 0.0
+        record["completion_tokens_per_sec"] = completion_count / elapsed if completion_count is not None else None
+        record["total_tokens_per_sec"] = total_count / elapsed if total_count is not None else None
 
     timing_values = {
         "ttft_sec": ttft_sec,

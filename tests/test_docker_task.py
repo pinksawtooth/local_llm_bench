@@ -94,6 +94,7 @@ class DockerTaskTests(unittest.TestCase):
             )
 
             def fake_executor(*args, **kwargs):
+                self.assertEqual(kwargs["timeout"], 3610.0)
                 return subprocess.CompletedProcess(
                     args[0],
                     0,
@@ -215,7 +216,7 @@ class DockerTaskTests(unittest.TestCase):
         self.assertEqual(record["benchmark_error_count"], 1)
         self.assertEqual(record["benchmark_incorrect_count"], 0)
 
-    def test_run_docker_task_benchmark_mounts_repo_root_into_container(self) -> None:
+    def test_worker_only_mounts_code_without_answer_keys(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             binary_path = root / "d-compile"
@@ -295,7 +296,8 @@ class DockerTaskTests(unittest.TestCase):
                     sleep_fn=lambda _: None,
                 )
 
-        self.assertIn(f"{_REPO_ROOT}:/opt/local_llm_bench:ro", seen_cmd)
+        self.assertIn(f"{_REPO_ROOT / 'local_llm_bench'}:/opt/local_llm_bench/local_llm_bench:ro", seen_cmd)
+        self.assertNotIn(f"{_REPO_ROOT}:/opt/local_llm_bench:ro", seen_cmd)
 
     def test_run_docker_task_benchmark_uses_image_bundled_ghidra_mcp_when_local_source_is_missing(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -4,7 +4,6 @@ import json
 import unittest
 
 from local_llm_bench.lmstudio_api import (
-    CONTINUATION_PROMPT,
     LMStudioAPIError,
     _non_stream_payload_to_result,
     consume_sse_stream,
@@ -128,7 +127,7 @@ class LMStudioAPITests(unittest.TestCase):
         self.assertEqual(result.prompt_tokens, 10)
         self.assertEqual(result.completion_tokens, 7)
 
-    def test_stream_chat_completion_continues_until_remaining_budget(self) -> None:
+    def test_stream_chat_completion_never_continues_after_length(self) -> None:
         requests: list[dict[str, object]] = []
         responses = [
             _FakeStreamResponse(
@@ -170,28 +169,13 @@ class LMStudioAPITests(unittest.TestCase):
             urlopen=fake_urlopen,
         )
 
-        self.assertEqual(result.response_text, "alpha beta")
+        self.assertEqual(len(requests), 1)
+        self.assertEqual(result.response_text, "alpha")
         self.assertEqual(result.reasoning_text, "")
-        self.assertAlmostEqual(result.ttft_ms or 0.0, 100.0, places=4)
-        self.assertAlmostEqual(result.total_latency_ms, 700.0, places=4)
-        self.assertAlmostEqual(result.completion_window_ms or 0.0, 600.0, places=4)
+        self.assertAlmostEqual(result.ttft_ms, 100.0)
+        self.assertAlmostEqual(result.total_latency_ms, 400.0)
         self.assertEqual(result.prompt_tokens, 12)
-        self.assertEqual(result.initial_prompt_tokens, 12)
-        self.assertAlmostEqual(result.initial_prompt_latency_ms or 0.0, 100.0, places=4)
-        self.assertAlmostEqual(result.initial_prompt_tps or 0.0, 120.0, places=3)
-        self.assertEqual(result.conversation_prompt_tokens, 28)
-        self.assertAlmostEqual(result.conversation_prompt_latency_ms or 0.0, 700.0, places=4)
-        self.assertAlmostEqual(result.conversation_prompt_tps or 0.0, 40.0, places=3)
-        self.assertEqual(result.completion_tokens, 10)
-        self.assertEqual(result.total_tokens, 22)
-        self.assertEqual(result.finish_reason, "stop")
+        self.assertEqual(result.completion_tokens, 6)
+        self.assertEqual(result.total_tokens, 18)
+        self.assertEqual(result.finish_reason, "length")
         self.assertEqual(requests[0]["max_tokens"], 10)
-        self.assertEqual(requests[1]["max_tokens"], 4)
-        self.assertEqual(
-            requests[1]["messages"],
-            [
-                {"role": "user", "content": "RC4を書いて"},
-                {"role": "assistant", "content": "alpha"},
-                {"role": "user", "content": CONTINUATION_PROMPT},
-            ],
-        )

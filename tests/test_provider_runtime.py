@@ -234,7 +234,7 @@ class UnslothStudioProviderRuntimeTests(unittest.TestCase):
         self.assertEqual(session.request_json.call_args_list[0].args[0], "/api/models/local")
         self.assertEqual(
             session.request_json.call_args_list[1].kwargs["payload"],
-            {"model_path": str(model_root)},
+            {"model_path": str(main_model_path)},
         )
 
     def test_prepare_model_infers_quantization_from_display_name(self) -> None:
@@ -269,11 +269,111 @@ class UnslothStudioProviderRuntimeTests(unittest.TestCase):
         self.assertEqual(model_info["quantization_name"], "Q4_K_XL")
         self.assertEqual(model_info["quantization_bits"], 4)
 
+    def test_prepare_model_excludes_auxiliary_ggufs(self) -> None:
+        for main_name in ("model.gguf", "Qwen3.6-35B-A3B-DFlash-Q4_K_M.gguf"):
+            with self.subTest(main_name=main_name), tempfile.TemporaryDirectory() as tmpdir:
+                root = Path(tmpdir)
+                model_root = root / "model-GGUF"
+                model_root.mkdir()
+                main_model_path = model_root / main_name
+                main_model_path.write_bytes(b"main-model")
+                for auxiliary_name in (
+                    "mmproj-BF16.gguf",
+                    "mtp-model-Q8_0.gguf",
+                    "dspark-model-Q8_0.gguf",
+                    "dflash-model-Q8_0.gguf",
+                    "MTP/model-Q8_0-MTP.gguf",
+                    "dspark/draft-Q8_0.gguf",
+                    "imatrix_Q8_0.gguf",
+                ):
+                    auxiliary_path = model_root / auxiliary_name
+                    auxiliary_path.parent.mkdir(exist_ok=True)
+                    auxiliary_path.write_bytes(b"auxiliary" * 20)
+                session = MagicMock()
+                session.request_json.side_effect = [
+                    {"models": [{"id": "owner/model-GGUF", "path": str(model_root)}]},
+                    {"status": "loaded", "model": str(main_model_path), "is_gguf": True},
+                ]
+                runtime = UnslothStudioProviderRuntime(config=_make_config(root), session=session)
+
+                _, model_info = runtime.prepare_model("owner/model-GGUF")
+
+                self.assertEqual(
+                    session.request_json.call_args_list[1].kwargs["payload"],
+                    {"model_path": str(main_model_path)},
+                )
+                self.assertEqual(model_info["path"], str(main_model_path))
+                self.assertNotEqual(model_info["quantization_name"], "Q8_0")
+
+    def test_prepare_model_rejects_local_paths_without_main_gguf(self) -> None:
+        for target_kind in ("empty_directory", "auxiliary_directory", "auxiliary_file"):
+            with self.subTest(target_kind=target_kind), tempfile.TemporaryDirectory() as tmpdir:
+                root = Path(tmpdir)
+                model_path = root / "model-GGUF"
+                model_path.mkdir()
+                if target_kind != "empty_directory":
+                    auxiliary_path = model_path / "mtp-model-Q8_0.gguf"
+                    auxiliary_path.write_bytes(b"auxiliary")
+                    if target_kind == "auxiliary_file":
+                        model_path = auxiliary_path
+                session = MagicMock()
+                session.request_json.return_value = {
+                    "models": [{"id": "owner/model-GGUF", "path": str(model_path)}]
+                }
+                runtime = UnslothStudioProviderRuntime(config=_make_config(root), session=session)
+
+                with self.assertRaisesRegex(RuntimeError, "モデル本体の GGUF が見つかりません"):
+                    runtime.prepare_model("owner/model-GGUF")
+
+                session.request_json.assert_called_once()
+                self.assertEqual(session.request_json.call_args.args[0], "/api/models/local")
+
+    def test_unload_model_keeps_exact_loaded_artifact_across_aliases_and_retries(self) -> None:
+        for request_kind in ("alias", "directory"):
+            for unload_key in ("requested_model", "api_model", "identifier"):
+                with self.subTest(request_kind=request_kind, unload_key=unload_key):
+                    with tempfile.TemporaryDirectory() as tmpdir:
+                        root = Path(tmpdir)
+                        model_root = root / "model-GGUF"
+                        model_root.mkdir()
+                        model_path = model_root / "model-Q4_K_M.gguf"
+                        model_path.write_bytes(b"model")
+                        requested_model = "owner/model-GGUF" if request_kind == "alias" else str(model_root)
+                        session = MagicMock()
+                        session.request_json.side_effect = [
+                            {"models": [{"id": requested_model, "path": str(model_root)}]},
+                            {"status": "loaded", "model": model_path.stem, "is_gguf": True},
+                            RuntimeError("temporary unload failure"),
+                            {"status": "unloaded", "model": str(model_path)},
+                        ]
+                        runtime = UnslothStudioProviderRuntime(config=_make_config(root), session=session)
+                        api_model, model_info = runtime.prepare_model(requested_model)
+                        unload_model = {
+                            "requested_model": requested_model,
+                            "api_model": api_model,
+                            "identifier": model_info["identifier"],
+                        }[unload_key]
+                        # A new, larger quant must not change the already-loaded target.
+                        (model_root / "model-Q8_0.gguf").write_bytes(b"new-model" * 20)
+
+                        failed_results = runtime.unload_model(unload_model)
+                        retry_results = runtime.unload_model(unload_model)
+
+                        self.assertEqual(failed_results[0].status, "error")
+                        self.assertEqual(retry_results[0].status, "unloaded")
+                        self.assertEqual(retry_results[0].target, str(model_path))
+                        self.assertEqual(session.request_json.call_count, 4)
+                        for call in session.request_json.call_args_list[2:]:
+                            self.assertEqual(call.args[0], "/api/inference/unload")
+                            self.assertEqual(call.kwargs["payload"], {"model_path": str(model_path)})
+
     def test_prepare_model_prefers_requested_model_for_unsloth_chat_api(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             config = _make_config(Path(tmpdir))
             local_model_dir = Path(tmpdir) / "models" / "gemma-4-26B-A4B-it-GGUF"
             local_model_dir.mkdir(parents=True)
+            main_model_path = local_model_dir / "gemma-4-26B-A4B-it-Q4_K_M.gguf"
+            main_model_path.write_bytes(b"main-model")
             session = MagicMock()
             session.request_json.side_effect = [
                 {
@@ -303,7 +403,7 @@ class UnslothStudioProviderRuntimeTests(unittest.TestCase):
         self.assertEqual(model_info["identifier"], "google/gemma-4-26b-a4b")
         self.assertEqual(
             session.request_json.call_args_list[1].kwargs["payload"],
-            {"model_path": str(local_model_dir)},
+            {"model_path": str(main_model_path)},
         )
 
     def test_prepare_model_prefers_lmstudio_gguf_entry_over_transformers_hf_cache_match(self) -> None:
@@ -313,6 +413,8 @@ class UnslothStudioProviderRuntimeTests(unittest.TestCase):
             lmstudio_dir = Path(tmpdir) / "lmstudio" / "gemma-4-26B-A4B-it-GGUF"
             hf_transformers_dir.mkdir(parents=True)
             lmstudio_dir.mkdir(parents=True)
+            main_model_path = lmstudio_dir / "gemma-4-26B-A4B-it-Q4_K_M.gguf"
+            main_model_path.write_bytes(b"main-model")
             session = MagicMock()
             session.request_json.side_effect = [
                 {
@@ -349,7 +451,7 @@ class UnslothStudioProviderRuntimeTests(unittest.TestCase):
         self.assertEqual(model_info["quantization"], "Q4_K_M (4-bit)")
         self.assertEqual(
             session.request_json.call_args_list[1].kwargs["payload"],
-            {"model_path": str(lmstudio_dir)},
+            {"model_path": str(main_model_path)},
         )
 
     def test_describe_model_infers_quantization_from_local_gguf_artifact(self) -> None:

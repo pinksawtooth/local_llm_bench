@@ -1,0 +1,38 @@
+provider: mlx_serve
+mode: docker_task
+api_base: "http://127.0.0.1:11234/v1"
+# ~/.mlx-serve/models 配下の mlx-serve 専用モデル。モデルIDは /v1/models の id と完全一致させます。
+models:
+  - "ddalcu/Qwen3.8-27B-MLX-Serve-4bit"
+  - "ddalcu/Qwen3.8-Flash-Next-MLX-Serve-mixed-4-8bit"
+  - "prism-ml/Ternary-Bonsai-2-27B-mlx-2bit"
+
+mlx_serve:
+  model_dirs: ["~/.mlx-serve/models"]
+
+benchmark:
+  spec: "../benchmarks/d_compile/spec.yaml"
+  answer_key: "../benchmarks/d_compile/spec.answers.yaml"
+  question_timeout_sec: 3600
+  ghidra_tool_mode: unrestricted
+
+docker:
+  image: "local-llm-bench:inspect-v1"
+  platform: "linux/arm64"
+  # mlx-serve の既定 --host 0.0.0.0 ならコンテナから host.docker.internal で到達できます。
+  api_base: "http://host.docker.internal:11234/v1"
+
+request:
+  use_mlx_serve_defaults: true
+
+runs:
+  cold_runs: 1
+  warm_runs: 3
+  timeout_sec: 43200
+  cooldown_sec: 0
+
+output:
+  history_json: "../runs/history.json"
+  latest_json: "../runs/latest_run.json"
+  report_html: "../docs/index.html"
+  run_logs_dir: "../runs/logs"

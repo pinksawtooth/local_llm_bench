@@ -205,7 +205,9 @@ def resolve_native_binary_target(binary_path: Optional[Path]) -> ResolvedGhidraT
     if binary_path is None or not binary_path.exists():
         return ResolvedGhidraTarget(path=None, resolution=None)
 
-    if detect_target_kind(binary_path) == "binary":
+    # ZIPs contain NUL bytes too. Resolve known archives before the generic
+    # binary heuristic, otherwise Ghidra receives the ZIP instead of its PE.
+    if not _is_supported_archive(binary_path) and detect_target_kind(binary_path) == "binary":
         return ResolvedGhidraTarget(path=binary_path, resolution="direct")
 
     search_root: Path | None = None

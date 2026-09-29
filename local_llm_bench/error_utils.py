@@ -116,9 +116,13 @@ def annotate_error_info(
     source_status = status if status is not None else target.get("status")
     source_stderr = stderr_text if isinstance(stderr_text, str) else target.get("stderr_excerpt")
 
-    signature_source = source_error if isinstance(source_error, str) and source_error.strip() else source_stderr
+    has_error = isinstance(source_error, str) and bool(source_error.strip())
+    failed_status = str(source_status or "").strip().lower() not in ("", "success")
+    # stderr also contains normal MCP diagnostics. Only failed executions (or
+    # an explicit error) contribute error metadata, including legacy records.
+    signature_source = (source_error if has_error else source_stderr) if has_error or failed_status else None
     target["error_signature"] = normalize_error_signature(signature_source)
-    target["error_category"] = categorize_error(signature_source or source_error or "", status=source_status)
+    target["error_category"] = categorize_error(signature_source or "", status=source_status) if has_error or failed_status else None
     target["stderr_excerpt"] = excerpt_text(source_stderr)
     target.setdefault("log_path", None)
     return target

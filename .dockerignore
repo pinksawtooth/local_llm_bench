@@ -1,0 +1,8 @@
+**
+!Dockerfile.bench
+!requirements.txt
+!requirements.lock
+!local_llm_bench/
+!local_llm_bench/**
+**/__pycache__/
+**/*.pyc

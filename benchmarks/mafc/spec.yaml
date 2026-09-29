@@ -1,0 +1,19 @@
+id: mafc
+title: MAFC (SECCON Beginners CTF 2025)
+description: 公式配布ZIPを使ったWindows実行ファイルの静的解析・フラグ復元ベンチマーク
+questions:
+  - id: mafc
+    prompt: |-
+      MAFC.zipを解析し、CTFのフラグを取得してください。
+      配布実行ファイルは起動せず、静的解析とPythonによる補助計算・復号で解いてください。
+      得られたフラグ文字列を、大文字・小文字を変えずにそのまま回答してください。
+    answer_type: regex
+    binary_path: data/MAFC.zip
+    category: rev
+    difficulty: hard
+    tags:
+      - ghidra
+      - ctf
+      - windows
+      - pe
+      - seccon-beginners-2025

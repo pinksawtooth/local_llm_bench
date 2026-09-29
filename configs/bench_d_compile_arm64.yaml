@@ -7,22 +7,18 @@ models:
   - "unsloth/gemma-4-31b-it"
 
 benchmark:
-  spec: "benchmarks/d_compile/spec.yaml"
-  answer_key: "benchmarks/d_compile/spec.answers.yaml"
-  question_timeout_sec: 600
+  spec: "../benchmarks/d_compile/spec.yaml"
+  answer_key: "../benchmarks/d_compile/spec.answers.yaml"
+  question_timeout_sec: 3600
   ghidra_tool_mode: unrestricted
 
-lmstudio:
-  parallelism_sweep: [2, 3, 4]
-
 docker:
-  image: "local-llm-bench:bench"
+  image: "local-llm-bench:inspect-v1"
   platform: "linux/arm64"
   lmstudio_base_url: "http://host.docker.internal:1234/v1"
 
 request:
-  temperature: 0.0
-  max_tokens: 131072
+  use_lmstudio_defaults: true
 
 runs:
   cold_runs: 1
@@ -31,6 +27,7 @@ runs:
   cooldown_sec: 0
 
 output:
-  history_json: "runs/history.json"
-  latest_json: "runs/latest_run.json"
-  report_html: "docs/index.html"
+  history_json: "../runs/history.json"
+  latest_json: "../runs/latest_run.json"
+  report_html: "../docs/index.html"
+  run_logs_dir: "../runs/logs"

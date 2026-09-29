@@ -1,0 +1,36 @@
+provider: mlx_serve
+mode: prompt
+api_base: "http://127.0.0.1:11234/v1"
+# 2026-09-19: MLX Core.app 同梱の mlx-serve 26.9.4 の公開APIを基に作成。実機のロード・推論は未実施。
+# mlx-serve（MLX Core）は事前に起動してください。起動オプション・モデルフォルダは変更しません。
+# モデルIDは `curl http://127.0.0.1:11234/v1/models` に表示される id と完全一致させます。
+# ~/.mlx-serve/models 配下にダウンロードした mlx-serve 専用モデルを指定します。
+models:
+  - "ddalcu/Qwen3.8-27B-MLX-Serve-4bit"
+  - "ddalcu/Qwen3.8-Flash-Next-MLX-Serve-mixed-4-8bit"
+  - "prism-ml/Ternary-Bonsai-2-27B-mlx-2bit"
+
+mlx_serve:
+  # 重みのSHA-256を記録するため、mlx-serve の --model-dir と同じフォルダを指定します。
+  # APIはモデルのパスを返さないので、<model_dir>/<id> にある場合だけ推定値として記録します。
+  model_dirs: ["~/.mlx-serve/models"]
+
+prompt:
+  text: "pythonでライブラリを使わずにRC4を実装して"
+
+request:
+  # 出力上限・温度・サンプリング・思考設定は mlx-serve の起動オプションと
+  # モデルの generation_config.json に任せ、リクエストには含めません。
+  use_mlx_serve_defaults: true
+
+runs:
+  cold_runs: 1
+  warm_runs: 3
+  timeout_sec: 43200
+  cooldown_sec: 0
+
+output:
+  history_json: "../runs/history.json"
+  latest_json: "../runs/latest_run.json"
+  report_html: "../docs/index.html"
+  run_logs_dir: "../runs/logs"

@@ -1,3 +1,4 @@
+"""Deterministic answer rules used by the host's Inspect Scorer."""
 from __future__ import annotations
 
 import json

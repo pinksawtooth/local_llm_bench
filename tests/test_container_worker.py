@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import types
+from pathlib import Path
+import tempfile
+
+from local_llm_bench.inspect_harness import dependency_lock_hash
 import unittest
 from unittest.mock import patch
 
@@ -37,6 +41,22 @@ class _FakeToolSession:
 
 
 class ContainerWorkerTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.enterContext(patch.dict("os.environ", {"LOCAL_BENCH_INSPECT_LOG_DIR": str(self.root / "worker")}))
+        self.enterContext(patch("inspect_ai._util.appdirs.user_data_path", return_value=self.root / "app"))
+        self.enterContext(patch("inspect_ai._util.appdirs.user_cache_path", return_value=self.root / "cache"))
+
+    async def test_old_worker_request_cannot_start_tools_or_inference(self):
+        for payload in ({}, {"inspect_lock_sha256": dependency_lock_hash(), "harness": "legacy"}):
+            with self.subTest(payload=payload), patch.object(container_worker, "_open_mcp_stdio_session") as mcp, \
+                 patch.object(container_worker, "_chat_completion") as completion:
+                result = await container_worker._run_question(payload)
+                self.assertEqual(result["status"], "error")
+                self.assertIn("Inspect", result["error"])
+                mcp.assert_not_called()
+                completion.assert_not_called()
+
     def test_drop_none_values_removes_nested_nulls(self) -> None:
         sanitized = container_worker._drop_none_values(
             {
@@ -60,27 +80,15 @@ class ContainerWorkerTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("metadata", sanitized["tool_calls"][0])
         self.assertNotIn("description", sanitized["tool_calls"][0]["function"])
 
-    def test_assistant_message_payload_never_emits_null_content(self) -> None:
-        payload = container_worker._assistant_message_payload(
-            assistant_text="",
-            tool_calls=[
-                {
-                    "id": "call-1",
-                    "type": "function",
-                    "function": {"name": "demo", "arguments": "{}"},
-                }
-            ],
-        )
-        self.assertEqual(payload["role"], "assistant")
-        self.assertEqual(payload["content"], "")
-        self.assertIn("tool_calls", payload)
-        self.assertNotIn(None, payload.values())
-
     async def test_run_question_preserves_primary_error_when_cleanup_raises(self) -> None:
         async def fake_open_mcp_stdio_session(**_: object):
             return _FakeSessionStack(), object(), _FakeToolList()
 
         payload = {
+            "inspect_lock_sha256": dependency_lock_hash(),
+            "inspect": {"max_turns": 3, "max_tool_calls": 2, "tool_timeout_sec": 1},
+            "timeout_sec": 10,
+            "provider": "lmstudio",
             "api_base": "http://127.0.0.1:1/v1",
             "model": "dummy-model",
             "temperature": 0.0,
@@ -122,6 +130,10 @@ class ContainerWorkerTests(unittest.IsolatedAsyncioTestCase):
             return _FakeSessionStack(), object(), _FakeToolList()
 
         payload = {
+            "inspect_lock_sha256": dependency_lock_hash(),
+            "inspect": {"max_turns": 3, "max_tool_calls": 2, "tool_timeout_sec": 1},
+            "timeout_sec": 10,
+            "provider": "lmstudio",
             "api_base": "http://127.0.0.1:1/v1",
             "model": "dummy-model",
             "temperature": 0.0,
@@ -181,7 +193,7 @@ class ContainerWorkerTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(payload["error"], "RuntimeError: inner boom")
 
-    async def test_run_question_uses_total_prompt_latency_for_prompt_speed(self) -> None:
+    async def test_react_does_not_invent_nonstreaming_prompt_or_decode_speed(self) -> None:
         tool_spec = {
             "type": "function",
             "function": {
@@ -195,6 +207,10 @@ class ContainerWorkerTests(unittest.IsolatedAsyncioTestCase):
             return _AsyncNullContext(), _FakeToolSession(), types.SimpleNamespace(tools=[tool_spec])
 
         payload = {
+            "inspect_lock_sha256": dependency_lock_hash(),
+            "inspect": {"max_turns": 3, "max_tool_calls": 2, "tool_timeout_sec": 1},
+            "timeout_sec": 10,
+            "provider": "lmstudio",
             "api_base": "http://127.0.0.1:1/v1",
             "model": "dummy-model",
             "temperature": 0.0,
@@ -274,14 +290,16 @@ class ContainerWorkerTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result["status"], "success")
         self.assertEqual(result["prompt_tokens"], 300)
-        self.assertEqual(result["prompt_latency_ms"], 50.0)
-        self.assertAlmostEqual(result["approx_prompt_tps"], 6000.0)
+        self.assertIsNone(result.get("prompt_latency_ms"))
+        self.assertIsNone(result.get("approx_prompt_tps"))
+        self.assertIsNone(result["ttft_ms"])
+        self.assertIsNone(result["decode_tps"])
         self.assertEqual(result["initial_prompt_tokens"], 100)
-        self.assertEqual(result["initial_prompt_latency_ms"], 10.0)
-        self.assertAlmostEqual(result["initial_prompt_tps"], 10000.0)
+        self.assertIsNone(result.get("initial_prompt_latency_ms"))
+        self.assertIsNone(result.get("initial_prompt_tps"))
         self.assertEqual(result["conversation_prompt_tokens"], 300)
-        self.assertEqual(result["conversation_prompt_latency_ms"], 50.0)
-        self.assertAlmostEqual(result["conversation_prompt_tps"], 6000.0)
+        self.assertIsNone(result.get("conversation_prompt_latency_ms"))
+        self.assertIsNone(result.get("conversation_prompt_tps"))
         self.assertEqual(len(result["turn_usage"]), 2)
         self.assertEqual(result["turn_usage"][0]["prompt_tokens"], 100)
         self.assertEqual(result["turn_usage"][1]["completion_tokens"], 20)
@@ -295,6 +313,9 @@ class ContainerWorkerTests(unittest.IsolatedAsyncioTestCase):
             return _AsyncNullContext(), object(), _FakeToolList()
 
         payload = {
+            "inspect_lock_sha256": dependency_lock_hash(),
+            "inspect": {"max_turns": 3, "max_tool_calls": 2, "tool_timeout_sec": 1},
+            "timeout_sec": 10,
             "provider": "unsloth_studio",
             "api_base": "http://host.docker.internal:8888/v1",
             "model": "dummy-model",

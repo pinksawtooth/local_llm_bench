@@ -6,8 +6,10 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Dict
 
 from .config import BenchmarkConfig
+from .conditions import evaluation_identity
 from .lmstudio_api import LMStudioAPIError, stream_chat_completion
 from .stats import compute_run_summary
+from .metrics import measured_metrics, inference_observation
 from .telemetry import (
     TelemetryRecorder,
     build_failed_turn_usage_record,
@@ -38,6 +40,8 @@ def _empty_record(
     prompt_text: str,
 ) -> Dict[str, Any]:
     return {
+        "metrics": measured_metrics({}),
+        "inference_requests": [inference_observation({}, status=status, turn=1, error=error)],
         "phase": phase,
         "iteration": iteration,
         "started_at": started_at,
@@ -75,6 +79,7 @@ def _empty_record(
 
 
 def _turn_usage_from_result(result: Any, *, prompt_text: str) -> list[Dict[str, Any]]:
+    metrics = measured_metrics(result.to_dict())
     prompt_breakdown = prompt_breakdown_from_messages([{"role": "user", "content": prompt_text}])
     elapsed_sec = (
         float(result.total_latency_ms) / 1000.0
@@ -86,6 +91,7 @@ def _turn_usage_from_result(result: Any, *, prompt_text: str) -> list[Dict[str, 
             source="prompt",
             turn_index=1,
             prompt_tokens=result.prompt_tokens,
+            cached_prompt_tokens=metrics["cached_prompt_tokens"],
             completion_tokens=result.completion_tokens,
             total_tokens=result.total_tokens,
             cumulative_prompt_tokens=result.prompt_tokens,
@@ -102,14 +108,13 @@ def _turn_usage_from_result(result: Any, *, prompt_text: str) -> list[Dict[str, 
                 else None
             ),
             prefill_sec=(
-                float(result.initial_prompt_latency_ms) / 1000.0
-                if isinstance(result.initial_prompt_latency_ms, (int, float))
-                and result.initial_prompt_latency_ms >= 0
+                metrics["prefill_ms"] / 1000.0
+                if metrics["prefill_ms"] is not None
                 else None
             ),
             decode_sec=(
-                float(result.completion_window_ms) / 1000.0
-                if isinstance(result.completion_window_ms, (int, float)) and result.completion_window_ms >= 0
+                metrics["generation_ms"] / 1000.0
+                if metrics["generation_ms"] is not None
                 else None
             ),
             post_first_token_sec=(
@@ -118,6 +123,10 @@ def _turn_usage_from_result(result: Any, *, prompt_text: str) -> list[Dict[str, 
                 else None
             ),
             prompt_breakdown=prompt_breakdown,
+            timing_sources={"ttft_sec": metrics["sources"]["ttft_ms"],
+                            "prefill_sec": metrics["sources"]["prefill_ms"],
+                            "decode_sec": "api.timings.predicted_ms" if metrics["generation_ms"] is not None else "unavailable"},
+            metrics=metrics,
         )
     ]
 
@@ -130,18 +139,21 @@ def run_benchmark(
     client: Callable[..., Any] = stream_chat_completion,
     sleep_fn: Callable[[float], None] = time.sleep,
     now_fn: Callable[[], float] = time.perf_counter,
+    execution: Any = None,
 ) -> Dict[str, Any]:
     selected_model = model or (config.models[0] if len(config.models) == 1 else None)
     if not selected_model:
         raise ValueError("run_benchmark には単一モデルを渡してください。")
     display_model = requested_model or selected_model
+    from .inspect_harness import require_inspect
+    require_inspect()
 
     records: list[Dict[str, Any]] = []
     phases = [("cold", idx + 1) for idx in range(config.runs.cold_runs)] + [
         ("warm", idx + 1) for idx in range(config.runs.warm_runs)
     ]
-    run_id = uuid.uuid4().hex[:8]
-    started_at = _utc_iso_now()
+    run_id = execution.run_id if execution else uuid.uuid4().hex[:8]
+    started_at = execution.started_at if execution else _utc_iso_now()
     started_perf = now_fn()
     telemetry = TelemetryRecorder(
         run_id=run_id,
@@ -167,7 +179,21 @@ def run_benchmark(
     )
 
     emit(f"[Model] {selected_model}")
+
+    def warmup(api_model: str) -> dict:
+        result = client(api_base=config.api_base, model=api_model, prompt_text=config.prompt_text,
+                        **config.request_parameters(),
+                        timeout_sec=config.runs.timeout_sec, now_fn=now_fn)
+        return {"status": "success", "ttft_ms": result.ttft_ms, "total_latency_ms": result.total_latency_ms}
+
     for phase, iteration in phases:
+        if execution:
+            cached = execution.cached(phase, iteration, "prompt")
+            if cached is not None:
+                records.append(cached["result"])
+                attempt_logs.append({"record_index": len(records) - 1, "phase": phase, "iteration": iteration, "payload": cached["log"]})
+                continue
+            selected_model = execution.before_attempt(phase, iteration, warmup)
         attempt_started_at = _utc_iso_now()
         emit(f"  - {phase} #{iteration} ...")
         attempt_span = telemetry.start_span(
@@ -176,17 +202,27 @@ def run_benchmark(
             iteration=iteration,
             benchmark_mode=config.mode,
         )
+        inspect_info: dict = {}
         try:
-            result = client(
-                api_base=config.api_base,
-                model=selected_model,
-                prompt_text=config.prompt_text,
-                temperature=config.request.temperature,
-                max_tokens=config.request.max_tokens,
-                timeout_sec=config.runs.timeout_sec,
-                now_fn=now_fn,
-              )
+            def invoke():
+                return client(
+                    api_base=config.api_base,
+                    model=selected_model,
+                    prompt_text=config.prompt_text,
+                    **config.request_parameters(),
+                    timeout_sec=config.runs.timeout_sec,
+                    now_fn=now_fn,
+                )
+            from .inspect_harness import run_unit, unit_log_directory
+            result = run_unit(config=config, model=selected_model, operation=invoke,
+                              log_dir=unit_log_directory(config, run_id, phase, iteration, "prompt"),
+                              metadata={"run_id": run_id, "phase": phase, "iteration": iteration}, info=inspect_info)
             record = {
+                "metrics": measured_metrics(result.to_dict()),
+                "inference_requests": [inference_observation(result.to_dict(), turn=1)],
+                "raw_usage": result.raw_usage,
+                "raw_timings": result.raw_timings,
+                "raw_stats": result.raw_stats,
                 "phase": phase,
                 "iteration": iteration,
                 "started_at": attempt_started_at,
@@ -233,8 +269,7 @@ def run_benchmark(
                             "api_base": config.api_base,
                             "model": selected_model,
                             "prompt_text": config.prompt_text,
-                            "temperature": config.request.temperature,
-                            "max_tokens": config.request.max_tokens,
+                            **config.recorded_request_parameters(),
                             "timeout_sec": config.runs.timeout_sec,
                         },
                         "response": dict(record),
@@ -273,14 +308,18 @@ def run_benchmark(
                             "api_base": config.api_base,
                             "model": selected_model,
                             "prompt_text": config.prompt_text,
-                            "temperature": config.request.temperature,
-                            "max_tokens": config.request.max_tokens,
+                            **config.recorded_request_parameters(),
                             "timeout_sec": config.runs.timeout_sec,
                         },
                         "response": dict(record),
                     },
                 }
             )
+        if inspect_info:
+            records[-1]["inspect"] = inspect_info
+            attempt_logs[-1]["payload"]["inspect"] = inspect_info
+        if execution:
+            execution.save_unit(phase, iteration, "prompt", records[-1], attempt_logs[-1]["payload"])
         if config.runs.cooldown_sec > 0:
             cooldown_span = telemetry.start_span(
                 "cooldown",
@@ -299,13 +338,13 @@ def run_benchmark(
         "ended_at": ended_at,
         "duration_sec": duration_sec,
         "provider": config.provider,
+        "evaluation": evaluation_identity(config),
         "api_base": config.api_base,
         "model": display_model,
         "api_model": selected_model,
         "prompt_text": config.prompt_text,
         "request": {
-            "temperature": config.request.temperature,
-            "max_tokens": config.request.max_tokens,
+            **config.recorded_request_parameters(),
         },
         "runs": {
             "cold_runs": config.runs.cold_runs,

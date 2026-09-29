@@ -5,6 +5,7 @@ import re
 import subprocess
 import urllib.error
 import urllib.request
+from urllib.parse import urlsplit
 from dataclasses import asdict, dataclass
 from typing import Any, Callable, Optional
 
@@ -238,18 +239,15 @@ def _load_v1_model_entries(
     timeout_sec: float,
     urlopen: Callable[..., Any] = urllib.request.urlopen,
 ) -> list[dict[str, Any]]:
-    try:
-        payload = _json_request(
-            api_base=api_base,
-            endpoint="/api/v1/models",
-            timeout_sec=timeout_sec,
-            urlopen=urlopen,
-        )
-    except RuntimeError:
-        return []
+    payload = _json_request(
+        api_base=api_base,
+        endpoint="/api/v1/models",
+        timeout_sec=timeout_sec,
+        urlopen=urlopen,
+    )
     raw_entries = payload.get("models")
     if not isinstance(raw_entries, list):
-        return []
+        raise RuntimeError("LM Studio のロード状態レスポンスが不正です。")
     return [entry for entry in raw_entries if isinstance(entry, dict)]
 
 
@@ -461,7 +459,9 @@ def describe_loaded_model(
     timeout_sec: float = 15.0,
     api_base: str | None = None,
 ) -> Optional[dict[str, Any]]:
-    entries = _load_loaded_entries(run=run, timeout_sec=timeout_sec)
+    endpoint = urlsplit(api_base) if api_base else None
+    local_cli = endpoint is None or (endpoint.hostname in {"localhost", "127.0.0.1", "::1"} and endpoint.port == 1234)
+    entries = _load_loaded_entries(run=run, timeout_sec=timeout_sec) if local_cli else []
     matches = _matching_entries(requested_model, entries=entries)
     if not matches and api_base:
         entries = _load_http_model_entries(api_base=api_base, timeout_sec=timeout_sec)
@@ -486,7 +486,11 @@ def describe_loaded_model(
         indexed_model_identifier=_normalize_text(entry.get("indexedModelIdentifier")),
         path=_normalize_text(entry.get("path")),
     )
-    return info.to_dict()
+    result = info.to_dict()
+    for key in ("runtime", "load_config", "reported_inference"):
+        if isinstance(entry.get(key), dict):
+            result[key] = entry[key]
+    return result
 
 
 def _resolve_unload_targets(
